@@ -1,7 +1,9 @@
 from django.shortcuts import render
 from django.views.generic import View
-from django.http.response import JsonResponse,HttpResponse
+from django.http.response import JsonResponse, HttpResponse
 from .utils import *
+
+
 # Create your views here.
 
 class BaseView(View):
@@ -14,23 +16,24 @@ class BaseView(View):
 
 
 class UploadParse(BaseView):
-    def get(self,request):
+    def get(self, request):
         print("GET")
-        return JsonResponse(data=self.response, safe=False,status=201)
-    def post(self,request):
+        return JsonResponse(data=self.response, safe=False, status=201)
+
+    def post(self, request):
         print('POST')
         # params = request.POST
-        import pdb;pdb.set_trace()
+
         # Path to the PDF file
-        pdf_path = request.FILES.get('file_path')
-        if is_pdf(pdf_path):
-            pass
-        encoding = get_pdf_encoding(pdf_path)
-        if not encoding:
-            encoding = 'utf-8'
+        uploaded_file = request.FILES.get('file_path')
+        # if is_pdf(pdf_path):
+        #     pass
+        # encoding = get_pdf_encoding(pdf_path)
+        # if not encoding:
+        #     encoding = 'utf-8'
         # Generate the JSON structure
-        json_structure = generate_json_structure(pdf_path,encoding)
+        json_structure = adobe_pdf_parser(uploaded_file)
         print(json_structure)
         self.response['res_data'] = json_structure
         # parsed_data = parse_file('file_name')
-        return JsonResponse(data=self.response, safe=False,status=201)
+        return JsonResponse(data=self.response, safe=False, status=201)
