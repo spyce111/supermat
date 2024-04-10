@@ -5,6 +5,9 @@ import logging
 import io
 from io import BytesIO
 import zipfile
+
+from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
+
 from adobe.pdfservices.operation.auth.credentials import Credentials
 from adobe.pdfservices.operation.exception.exceptions import ServiceApiException, ServiceUsageException, SdkException
 from adobe.pdfservices.operation.pdfops.options.extractpdf.extract_pdf_options import ExtractPDFOptions
@@ -13,8 +16,6 @@ from adobe.pdfservices.operation.execution_context import ExecutionContext
 from adobe.pdfservices.operation.io.file_ref import FileRef
 from adobe.pdfservices.operation.pdfops.extract_pdf_operation import ExtractPDFOperation
 from pypdf import PdfWriter
-
-
 
 def get_pdf_encoding(file_path):
     with open(file_path.name, 'r', encoding='utf-8'):
@@ -27,6 +28,24 @@ def get_pdf_encoding(file_path):
             encoding = 'utf-8'  # You can change this to another encoding if needed
     return encoding
 
+def hugging_face_extraction(text):
+    # Define the model and tokenizer
+    model_name = "dbmdz/bert-large-cased-finetuned-conll03-english"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForTokenClassification.from_pretrained(model_name)
+
+    # Load the NER pipeline with custom model and tokenizer
+    ner_pipeline = pipeline("ner", model=model, tokenizer=tokenizer)
+
+    # Extract entities
+    # entities = ner_pipeline(text)
+    # ner_pipeline = pipeline("ner")
+    entities = ner_pipeline(text)
+    result = []
+    for entity in entities:
+        print(f"Entity: {entity['word']}, Type: {entity['entity']}")
+        result.append(entity['word'])
+    return result
 
 def extract_keywords(sentence):
     # Extract keywords based on the words in the sentence
@@ -46,6 +65,23 @@ def extract_speaker(text):
     pattern = r'(Operator|Speaker|Moderator|Guest Speaker):'
     match = re.search(pattern, text)
     return match.group(1) if match else None
+
+def extract_roles(sentence):
+    # Define the patterns for different roles
+    patterns = {
+        "author": r'(author):',
+        "operator": r'(operator):',
+        "speaker": r'(speaker):',
+        "moderator": r'(moderator):',
+        "guest": r'(guest):'
+    }
+    roles = {}
+    for role, pattern in patterns.items():
+        match = re.search(pattern, sentence, re.IGNORECASE)
+        if match:
+            # Extract the role name after the colon
+            roles[role] = sentence[match.end():].strip()
+    return roles
 
 def generate_json_structure(pdf_path, encoding):
     # Open the PDF file
@@ -140,6 +176,10 @@ def is_pdf(file_path):
         return True
     return False
 
+def extract_keywords(sentence):
+    # Extract keywords based on the words in the sentence
+    keywords = re.findall(r'\b\w{5,}\b', sentence)
+    return keywords
 
 def parse_file(parsed_json):
     section_number = 0
@@ -154,7 +194,8 @@ def parse_file(parsed_json):
             if sentence != "":
                 modified_sentences.append(
                     {sentence: {'structure': "{}.{}.{}".format(section_number, passage_number, sentence_number)}})
-                sentence_number += 1
+                sentence_number += 1 
+
 
     for element in parsed_json['elements']:
         if element['Path'][11] == 'H':
@@ -162,7 +203,7 @@ def parse_file(parsed_json):
             passage_number = 0
             add_prefix_to_sentences(section_number, element['Text'])
         elif element['Path'][11] == 'P':
-            passage_number += 1
+            passage_number += 1 
             add_prefix_to_sentences(section_number, element['Text'])
     return modified_sentences
 
