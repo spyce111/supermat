@@ -5,8 +5,9 @@ import logging
 import io
 from io import BytesIO
 import zipfile
-# from transformers import pipeline
+
 from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
+
 from adobe.pdfservices.operation.auth.credentials import Credentials
 from adobe.pdfservices.operation.exception.exceptions import ServiceApiException, ServiceUsageException, SdkException
 from adobe.pdfservices.operation.pdfops.options.extractpdf.extract_pdf_options import ExtractPDFOptions
@@ -14,7 +15,7 @@ from adobe.pdfservices.operation.pdfops.options.extractpdf.extract_element_type 
 from adobe.pdfservices.operation.execution_context import ExecutionContext
 from adobe.pdfservices.operation.io.file_ref import FileRef
 from adobe.pdfservices.operation.pdfops.extract_pdf_operation import ExtractPDFOperation
-
+from pypdf import PdfWriter
 
 def get_pdf_encoding(file_path):
     with open(file_path.name, 'r', encoding='utf-8'):
@@ -169,7 +170,6 @@ def generate_json_structure(pdf_path, encoding):
 
         return json_structure
 
-
 def is_pdf(file_path):
     response = file_path.name.lower().endswith('.pdf')
     if response:
@@ -195,6 +195,7 @@ def parse_file(parsed_json):
                 modified_sentences.append(
                     {sentence: {'structure': "{}.{}.{}".format(section_number, passage_number, sentence_number)}})
                 sentence_number += 1 
+
 
     for element in parsed_json['elements']:
         if element['Path'][11] == 'H':
