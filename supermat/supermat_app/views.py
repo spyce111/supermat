@@ -18,19 +18,32 @@ class UploadParse(BaseView):
         print("GET")
         return JsonResponse(data=self.response, safe=False,status=201)
     def post(self,request):
-        print('POST')
-        # params = request.POST
-        # import pdb;pdb.set_trace()
-        # Path to the PDF file
-        pdf_path = request.FILES.get('file_path')
-        if is_pdf(pdf_path):
-            pass
-        encoding = get_pdf_encoding(pdf_path)
-        if not encoding:
-            encoding = 'utf-8'
-        # Generate the JSON structure
-        # json_structure = generate_json_structure(pdf_path,encoding)
-        # print(json_structure)
-        # self.response['res_data'] = json_structure
-        # parsed_data = parse_file('file_name')
-        return JsonResponse(data=self.response, safe=False,status=201)
+        try:
+            # Path to the PDF file
+            pdf_path = request.FILES.get('file_path')
+            if not is_pdf(pdf_path):
+                raise Exception('Please Provide a PDF file')
+            result = adobe_pdf_parser(pdf_path.file)
+            # import pdb;pdb.set_trace()
+            # Generate the JSON structure
+            # for res in result:
+            #     for key,val in res.items():   
+            #         res[key]['document'] = str(pdf_path.name)
+            for res in result:
+                key = next(iter(res.keys()))
+                keywords = extract_keywords(key)
+                speaker = extract_roles(key)
+                if not speaker:
+                    speaker = {'speaker':'author'}
+                res[key]['document'] = str(pdf_path.name)
+                res[key]['keywords'] = keywords
+                # extract = hugging_face_extraction(key)
+                # print(extract)
+                res[key]['speaker'] =  [j for i,j in speaker.items()][0]
+            # result.append({'document': str(pdf_path.name)})
+            self.response['res_data'] = result
+            return JsonResponse(data=self.response, safe=False,status=200)
+        except Exception as e:
+            self.response['res_data'] = {}
+            self.response['res_str'] = 'Somethingwent wrong please try again later'
+            return JsonResponse(data=self.response, safe=True,status=400)
