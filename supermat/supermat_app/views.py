@@ -23,7 +23,6 @@ class UploadParse(BaseView):
     def post(self, request):
         print('POST')
         # params = request.POST
-
         # Path to the PDF file
         uploaded_file = request.FILES.get('file_path')
         # if is_pdf(pdf_path):
@@ -33,7 +32,7 @@ class UploadParse(BaseView):
         #     encoding = 'utf-8'
         # Generate the JSON structure
         json_structure = adobe_pdf_parser(uploaded_file)
-        print(json_structure)
+        print(json_struc<<<<<<< feature/json_structurture)
         self.response['res_data'] = json_structure
         # parsed_data = parse_file('file_name')
         return JsonResponse(data=self.response, safe=False, status=201)

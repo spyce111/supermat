@@ -12,6 +12,8 @@ from adobe.pdfservices.operation.pdfops.options.extractpdf.extract_element_type 
 from adobe.pdfservices.operation.execution_context import ExecutionContext
 from adobe.pdfservices.operation.io.file_ref import FileRef
 from adobe.pdfservices.operation.pdfops.extract_pdf_operation import ExtractPDFOperation
+from pypdf import PdfWriter
+
 
 
 def get_pdf_encoding(file_path):
@@ -44,7 +46,6 @@ def extract_speaker(text):
     pattern = r'(Operator|Speaker|Moderator|Guest Speaker):'
     match = re.search(pattern, text)
     return match.group(1) if match else None
-
 
 def generate_json_structure(pdf_path, encoding):
     # Open the PDF file
@@ -132,7 +133,6 @@ def generate_json_structure(pdf_path, encoding):
             sentence_number = 1
 
         return json_structure
-
 
 def is_pdf(file_path):
     response = file_path.name.lower().endswith('.pdf')
