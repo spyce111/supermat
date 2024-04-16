@@ -5,9 +5,9 @@ import logging
 import io
 from io import BytesIO
 import zipfile
-
-from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
-
+import spacy
+import nltk
+import yaml
 from adobe.pdfservices.operation.auth.credentials import Credentials
 from adobe.pdfservices.operation.exception.exceptions import ServiceApiException, ServiceUsageException, SdkException
 from adobe.pdfservices.operation.pdfops.options.extractpdf.extract_pdf_options import ExtractPDFOptions
@@ -15,7 +15,27 @@ from adobe.pdfservices.operation.pdfops.options.extractpdf.extract_element_type 
 from adobe.pdfservices.operation.execution_context import ExecutionContext
 from adobe.pdfservices.operation.io.file_ref import FileRef
 from adobe.pdfservices.operation.pdfops.extract_pdf_operation import ExtractPDFOperation
+from nltk import WordNetLemmatizer, word_tokenize
+from nltk.corpus import stopwords
+# from spacy.cli import download
+# download("en_core_web_sm")
 from pypdf import PdfWriter
+from transformers import (
+    TokenClassificationPipeline,
+    AutoModelForTokenClassification,
+    AutoTokenizer,
+)
+from transformers.pipelines import AggregationStrategy
+import numpy as np
+
+# with open('C:\\supermat\\supermat\\supermat_app\\config.yml', 'r') as fp:
+#     config = yaml.load(fp, yaml.SafeLoader)
+# client_id = config['AdobeCredentials']['client_id']
+# client_secret = config['AdobeCredentials']['client_secret']
+nltk.download('punkt')
+nltk.download('stopwords')
+nltk.download('wordnet')
+
 
 def get_pdf_encoding(file_path):
     with open(file_path.name, 'r', encoding='utf-8'):
@@ -28,43 +48,12 @@ def get_pdf_encoding(file_path):
             encoding = 'utf-8'  # You can change this to another encoding if needed
     return encoding
 
-def hugging_face_extraction(text):
-    # Define the model and tokenizer
-    model_name = "dbmdz/bert-large-cased-finetuned-conll03-english"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForTokenClassification.from_pretrained(model_name)
-
-    # Load the NER pipeline with custom model and tokenizer
-    ner_pipeline = pipeline("ner", model=model, tokenizer=tokenizer)
-
-    # Extract entities
-    # entities = ner_pipeline(text)
-    # ner_pipeline = pipeline("ner")
-    entities = ner_pipeline(text)
-    result = []
-    for entity in entities:
-        print(f"Entity: {entity['word']}, Type: {entity['entity']}")
-        result.append(entity['word'])
-    return result
 
 def extract_keywords(sentence):
     # Extract keywords based on the words in the sentence
     keywords = re.findall(r'\b\w+\b', sentence)
     return keywords
 
-
-def extract_timestamp(text):
-    # Extract timestamp from text
-    pattern = r'(\b\d{1,2}[:]\d{2}\s(?:AM|PM)\sET\b)'
-    match = re.search(pattern, text)
-    return match.group(1) if match else None
-
-
-def extract_speaker(text):
-    # Extract speaker from text
-    pattern = r'(Operator|Speaker|Moderator|Guest Speaker):'
-    match = re.search(pattern, text)
-    return match.group(1) if match else None
 
 def extract_roles(sentence):
     # Define the patterns for different roles
@@ -83,92 +72,92 @@ def extract_roles(sentence):
             roles[role] = sentence[match.end():].strip()
     return roles
 
-def generate_json_structure(pdf_path, encoding):
-    # Open the PDF file
-    with open(pdf_path.name, 'r', encoding=encoding, errors='ignore'):
-        # Create a PDF reader object
-        reader = PyPDF2.PdfReader(pdf_path.file)
 
-        # Initialize JSON structure
-        json_structure = {
-            "document": pdf_path.name,
-            "speaker": None,
-            "timestamp": None,
-            "annotations": [],
-            "sections": []
-        }
+def extract_timestamp(text):
+    # Extract timestamp from text
+    pattern = r'(\b\d{1,2}[:]\d{2}\s(?:AM|PM)\sET\b)'
+    match = re.search(pattern, text)
+    return match.group(1) if match else None
 
-        section_number = 1
-        paragraph_number = 1
-        sentence_number = 1
+def extract_entities(text_):
+    nlp = spacy.load("en_core_web_sm")
+    doc = nlp(text_)
+    entities_ = set()
+    for entity in doc.ents:
+        entities_.add(entity)
+        # spacy.explain(entity.text)
+    return entities_
+def extract_keywords_spacy(sentence):
+    try:
+        nlp = spacy.load("en_core_web_sm")
+        doc = nlp(sentence)
 
-        # Loop through each page in the PDF
-        for page_num in range(len(reader.pages)):
-            page = reader.pages[page_num]
-            text = page.extractText()
+        # Extract meaningful words (nouns, adjectives, verbs, and adverbs)
+        keywords = [token.lemma_ for token in doc if token.pos_ in ["NOUN", "ADJ", "VERB", "ADV"]]
 
-            # Extract timestamp and speaker
-            if not json_structure["timestamp"]:
-                json_structure["timestamp"] = extract_timestamp(text)
+        # Remove duplicates and return
+        return list(set(keywords))
+    except Exception as e:
+        print(str(e))
+        raise Exception('Error while extracting the key words: Hugging face extract')
 
-            if not json_structure["speaker"]:
-                json_structure["speaker"] = extract_speaker(text)
 
-            # Split the text into sentences
-            sentences = re.split(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s', text)
+def extract_keywords_nltk(sentence):
+    # Tokenize the sentence
+    tokens = word_tokenize(sentence.lower())
 
-            # Create a new section
-            section_title = "Section {}".format(section_number)
-            section = {
-                "section_number": str(section_number),
-                "section_title": section_title,
-                "paragraphs": []
-            }
+    # Remove stopwords and punctuation
+    stop_words = set(stopwords.words('english'))
+    tokens = [word for word in tokens if word.isalnum() and word not in stop_words]
 
-            # Create a new paragraph
-            paragraph = {
-                "paragraph_number": "{}.{}".format(section_number, paragraph_number),
-                "sentences": []
-            }
+    # Lemmatize words
+    lemmatizer = WordNetLemmatizer()
+    tokens = [lemmatizer.lemmatize(word) for word in tokens]
 
-            # Loop through each sentence
-            for sentence in sentences:
-                if sentence.strip():
-                    keywords = extract_keywords(sentence)
+    return tokens
 
-                    # Update the overall key list
-                    json_structure["annotations"].extend(keywords)
 
-                    # Add sentence to paragraph
-                    paragraph["sentences"].append({
-                        "sentence_number": "{}.{}.{}".format(section_number, paragraph_number, sentence_number),
-                        "text": sentence.strip(),
-                        "keywords": keywords
-                    })
+# Define keyphrase extraction pipeline
+class KeyphraseExtractionPipeline(TokenClassificationPipeline):
+    def __init__(self, model, *args, **kwargs):
+        super().__init__(
+            model=AutoModelForTokenClassification.from_pretrained(model),
+            tokenizer=AutoTokenizer.from_pretrained(model),
+            *args,
+            **kwargs
+        )
 
-                    sentence_number += 1
+    def postprocess(self, all_outputs):
+        results = super().postprocess(
+            all_outputs=all_outputs,
+            aggregation_strategy=AggregationStrategy.FIRST,
+        )
+        return np.unique([result.get("word").strip() for result in results])
 
-                    # If paragraph has reached its limit, start a new one
-                    if sentence_number > 3:
-                        section["paragraphs"].append(paragraph)
-                        paragraph_number += 1
-                        sentence_number = 1
-                        paragraph = {
-                            "paragraph_number": "{}.{}.{}".format(section_number, paragraph_number, sentence_number),
-                            "sentences": []
-                        }
 
-            # Add the last paragraph to the section
-            if paragraph["sentences"]:
-                section["paragraphs"].append(paragraph)
+def hugging_face_extractor(sentence):
+    try:
+        model_name = "ml6team/keyphrase-extraction-distilbert-inspec"
+        extractor = KeyphraseExtractionPipeline(model=model_name)
+        sentence = sentence.replace("\n", " ")
+        keywords = extractor(sentence)
+        return keywords
+    except Exception as e:
+        raise Exception('Error while extracting the keywords')
 
-            # Add the section to the JSON structure
-            json_structure["sections"].append(section)
-            section_number += 1
-            paragraph_number = 1
-            sentence_number = 1
 
-        return json_structure
+def extract_speaker(text):
+    # Extract speaker from text
+    pattern = r'(Operator|Speaker|Moderator|Guest Speaker):'
+    match = re.search(pattern, text)
+    return match.group(1) if match else None
+
+
+def key_exist_in_json(json_, key_):
+    if key_ in json_.keys():
+        return True
+    return False
+
 
 def is_pdf(file_path):
     response = file_path.name.lower().endswith('.pdf')
@@ -176,43 +165,146 @@ def is_pdf(file_path):
         return True
     return False
 
-def extract_keywords(sentence):
-    # Extract keywords based on the words in the sentence
-    keywords = re.findall(r'\b\w{5,}\b', sentence)
-    return keywords
 
-def parse_file(parsed_json):
-    section_number = 0
-    passage_number = 0
-    modified_sentences = []
+def parse_file(parsed_json, file_name):
+    try:
+        section_number = 0
+        passage_number = 0
+        modified_sentences = []
+        figure_count = 0
+        output = []
+        existing_texts = []
 
-    def add_prefix_to_sentences(section_number, passage_data):
-        sentence_number = 0
-        # Split the sentences from a passage
-        sentences = re.split(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s', passage_data)
-        for sentence in sentences:
-            if sentence != "":
-                modified_sentences.append(
-                    {sentence: {'structure': "{}.{}.{}".format(section_number, passage_number, sentence_number)}})
-                sentence_number += 1 
+        def add_prefix_to_sentences(section_number_, passage_data, element_):
+            sentence_number = 0
+
+            properties = {}
+            if key_exist_in_json(element_, 'Bounds'):
+                properties['Bounds'] = element_['Bounds']
+            if key_exist_in_json(element_, 'Font'):
+                properties['Font'] = element_['Font']
+            if key_exist_in_json(element_, 'HasClip'):
+                properties['HasClip'] = element_['HasClip']
+            if key_exist_in_json(element_, 'Lang'):
+                properties['Lang'] = element_['Lang']
+            if key_exist_in_json(element_, 'ObjectID'):
+                properties['ObjectID'] = element_['ObjectID']
+            if key_exist_in_json(element_, 'Page'):
+                properties['Page'] = element_['Page']
+            if key_exist_in_json(element_, 'Path'):
+                properties['Path'] = element_['Path']
+            if key_exist_in_json(element_, 'TextSize'):
+                properties['TextSize'] = element_['TextSize']
+            if key_exist_in_json(element_, 'attributes'):
+                properties['attributes'] = element_['attributes']
+            output.append(
+                {
+                    'type': 'Text',
+                    'structure': f'{section_number_}.{passage_number}.0',
+                    'text': passage_data,
+                    'key': list(set(hugging_face_extractor(passage_data)).union(set(extract_keywords_spacy(passage_data)))),
+                    'properties': properties,
+                    'sentences': [],
+                    'speaker': extract_roles(passage_data),
+                    'document': file_name,
+                    'timestamp': extract_timestamp(passage_data)
+                }
+            )
+            # Split the sentences from a passage
+            sentences = re.split(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s', passage_data)
+            if "" in sentences:
+                sentences.remove("")
+            if len(sentences) > 1:
+                for sentence in sentences:
+                    sentence.strip()
+                    sentence_number += 1
+                    output[-1]['sentences'].append(
+                        {
+                            'type': 'Text',
+                            'structure': f'{section_number_}.{passage_number}.{sentence_number}',
+                            'text': sentence,
+                            'key': list(set(hugging_face_extractor(sentence)).union(set(extract_keywords_spacy(sentence)))),
+                            'properties': properties
+                        })
+
+        for element in parsed_json['elements']:
+            # Checking for Headers
+            if element['Path'][11] == 'H':
+                section_number += 1
+                passage_number = 0
+                add_prefix_to_sentences(section_number, element['Text'], element)
+            # Checking for Passages
+            elif element['Path'][11] == 'P':
+                passage_number += 1
+                if element['Path'].endswith('ParagraphSpan'):
+                    text = element['Text']
+                    pattern = re.compile(rf"{re.escape(element['Path'])}\[\d+\]")
+                    for element1 in parsed_json['elements']:
+                        if pattern.match(element1['Path']) and element1['Path'] not in existing_texts:
+                            text += element1['Text']
+                            existing_texts.append(element1['Path'])
+                    add_prefix_to_sentences(section_number, text, element)
+                else:
+                    if 'ParagraphSpan' not in element['Path']:
+                        add_prefix_to_sentences(section_number, element['Text'], element)
+            # Checking for Images
+            elif 'Figure' in element['Path']:
+                passage_number += 1
+                output.append(
+                    {
+                        'type': 'Image',
+                        'structure': f'{section_number}.{passage_number}.0',
+                        'figure': f'FIGURE {figure_count}',
+                        'Bounds': element["Bounds"],
+                        'ObjectId': element["ObjectID"],
+                        'Page': element["Page"],
+                        'Path': element["Path"],
+                        'attributes': element["attributes"]
+                    }
+                )
+                figure_count += 1
+            # Checking for List Items
+            elif element['Path'][11] == 'L':
+                match = re.match(r'^.*?/LI', element['Path'])
+                if match:
+                    length_until_li = len(match.group())
+                text1 = element['Text']
+                existing_texts.append(element['Path'])
+                for element2 in parsed_json['elements']:
+                    if element2['Path'][11] == 'L':
+                        if element2['Path'][:length_until_li] + "/Lbl" == element['Path'] and element2[
+                            'Path'] not in existing_texts:
+                            section_number += 1
+                            passage_number = 0
+                            text1 += element2['Text']
+                            existing_texts.append(element2['Path'])
+                            add_prefix_to_sentences(section_number, text1, element)
+            # All the elements having text
+            else:
+                if 'Text' in element.keys() and element['Path'] not in existing_texts:
+                    text = element['Text']
+                    pattern = re.compile(rf"{re.escape(element['Path'])}\[\d+\]")
+                    for element1 in parsed_json['elements']:
+                        if pattern.match(element1['Path']) and 'Text' in element1.keys() and element1['Path'] not in \
+                                existing_texts:
+                            text += element1['Text']
+                            existing_texts.append(element1['Path'])
+                    passage_number += 1
+                    add_prefix_to_sentences(section_number, text, element)
+        return output
+    except Exception as e:
+        print(str(e))
+        import traceback;
+        error = traceback.format_exc()
+        print(error)
+        raise Exception('Something went wrong while parsing the pdf')
 
 
-    for element in parsed_json['elements']:
-        if element['Path'][11] == 'H':
-            section_number += 1
-            passage_number = 0
-            add_prefix_to_sentences(section_number, element['Text'])
-        elif element['Path'][11] == 'P':
-            passage_number += 1 
-            add_prefix_to_sentences(section_number, element['Text'])
-    return modified_sentences
-
-
-def adobe_pdf_parser(uploaded_file):
+def adobe_pdf_parser(upload_file):
     try:
         # get base path.
+        uploaded_file = upload_file.file
         file_data = uploaded_file.read()
-
         bytes_data = BytesIO(file_data)
         # Initial setup, create credentials instance.
         credentials = Credentials.service_principal_credentials_builder(). \
@@ -245,7 +337,7 @@ def adobe_pdf_parser(uploaded_file):
             file_name = zip_file.namelist()[0]
             file_content = zip_file.read(file_name)
         json_data = json.loads(file_content)
-        parsed_json = parse_file(json_data)
+        parsed_json = parse_file(json_data, upload_file.name)
         return parsed_json
     except (ServiceApiException, ServiceUsageException, SdkException):
         logging.exception("Exception encountered while executing operation")
