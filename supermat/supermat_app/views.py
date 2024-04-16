@@ -28,5 +28,5 @@ class UploadParse(BaseView):
             return JsonResponse(data=self.response, safe=False, status=200)
         except Exception as e:
             self.response['res_data'] = {}
-            self.response['res_str'] = 'Somethingwent wrong please try again later'
+            self.response['res_str'] = 'Something went wrong please try again later'
             return JsonResponse(data=self.response, safe=True, status=400)

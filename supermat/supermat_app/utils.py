@@ -1,4 +1,3 @@
-import PyPDF2
 import re
 import json
 import logging
@@ -17,8 +16,6 @@ from adobe.pdfservices.operation.io.file_ref import FileRef
 from adobe.pdfservices.operation.pdfops.extract_pdf_operation import ExtractPDFOperation
 from nltk import WordNetLemmatizer, word_tokenize
 from nltk.corpus import stopwords
-# from spacy.cli import download
-# download("en_core_web_sm")
 from pypdf import PdfWriter
 from transformers import (
     TokenClassificationPipeline,
@@ -27,11 +24,7 @@ from transformers import (
 )
 from transformers.pipelines import AggregationStrategy
 import numpy as np
-
-# with open('C:\\supermat\\supermat\\supermat_app\\config.yml', 'r') as fp:
-#     config = yaml.load(fp, yaml.SafeLoader)
-# client_id = config['AdobeCredentials']['client_id']
-# client_secret = config['AdobeCredentials']['client_secret']
+from .constants import Constants
 nltk.download('punkt')
 nltk.download('stopwords')
 nltk.download('wordnet')
@@ -47,12 +40,6 @@ def get_pdf_encoding(file_path):
             # If the encoding cannot be determined from the metadata, try reading the file with a specific encoding
             encoding = 'utf-8'  # You can change this to another encoding if needed
     return encoding
-
-
-def extract_keywords(sentence):
-    # Extract keywords based on the words in the sentence
-    keywords = re.findall(r'\b\w+\b', sentence)
-    return keywords
 
 
 def extract_roles(sentence):
@@ -72,22 +59,11 @@ def extract_roles(sentence):
             roles[role] = sentence[match.end():].strip()
     return roles
 
-
 def extract_timestamp(text):
     # Extract timestamp from text
-    pattern = r'(\b\d{1,2}[:]\d{2}\s(?:AM|PM)\sET\b)'
+    pattern = rf'{Constants.TIME_STAMP_REGEX}'
     match = re.search(pattern, text)
     return match.group(1) if match else None
-
-
-def extract_entities(text_):
-    nlp = spacy.load("en_core_web_sm")
-    doc = nlp(text_)
-    entities_ = set()
-    for entity in doc.ents:
-        entities_.add(entity)
-        # spacy.explain(entity.text)
-    return entities_
 
 
 def extract_keywords_spacy(sentence):
@@ -140,7 +116,7 @@ class KeyphraseExtractionPipeline(TokenClassificationPipeline):
 
 def hugging_face_extractor(sentence):
     try:
-        model_name = "ml6team/keyphrase-extraction-distilbert-inspec"
+        model_name = f'{Constants.HUGGING_FACE_MODEL_NAME}'
         extractor = KeyphraseExtractionPipeline(model=model_name)
         sentence = sentence.replace("\n", " ")
         keywords = extractor(sentence)
@@ -151,7 +127,7 @@ def hugging_face_extractor(sentence):
 
 def extract_speaker(text):
     # Extract speaker from text
-    pattern = r'(Operator|Speaker|Moderator|Guest Speaker):'
+    pattern = rf'{Constants.SPEAKER_REGEX}'
     match = re.search(pattern, text)
     return match.group(1) if match else None
 
@@ -164,7 +140,7 @@ def key_exist_in_json(json_, key_):
 
 def is_pdf(file_path):
     response = file_path.name.lower().endswith('.pdf')
-    if response:
+    if file_path.content_type == 'application/pdf' and response:
         return True
     return False
 
@@ -173,33 +149,14 @@ def parse_file(parsed_json, file_name):
     try:
         section_number = 0
         passage_number = 0
-        modified_sentences = []
         figure_count = 0
         output = []
         existing_texts = []
 
         def add_prefix_to_sentences(section_number_, passage_data, element_):
             sentence_number = 0
-
-            properties = {}
-            if key_exist_in_json(element_, 'Bounds'):
-                properties['Bounds'] = element_['Bounds']
-            if key_exist_in_json(element_, 'Font'):
-                properties['Font'] = element_['Font']
-            if key_exist_in_json(element_, 'HasClip'):
-                properties['HasClip'] = element_['HasClip']
-            if key_exist_in_json(element_, 'Lang'):
-                properties['Lang'] = element_['Lang']
-            if key_exist_in_json(element_, 'ObjectID'):
-                properties['ObjectID'] = element_['ObjectID']
-            if key_exist_in_json(element_, 'Page'):
-                properties['Page'] = element_['Page']
-            if key_exist_in_json(element_, 'Path'):
-                properties['Path'] = element_['Path']
-            if key_exist_in_json(element_, 'TextSize'):
-                properties['TextSize'] = element_['TextSize']
-            if key_exist_in_json(element_, 'attributes'):
-                properties['attributes'] = element_['attributes']
+            keys_to_check = ['Bounds', 'Font', 'HasClip', 'Lang', 'ObjectID', 'Page', 'Path', 'TextSize', 'attributes']
+            properties = {key: element_.get(key) for key in keys_to_check if key in element_.keys()}
             output.append(
                 {
                     'type': 'Text',
@@ -215,7 +172,7 @@ def parse_file(parsed_json, file_name):
                 }
             )
             # Split the sentences from a passage
-            sentences = re.split(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s', passage_data)
+            sentences = re.split(rf'{Constants.SPLIT_SENTENCE_REGEX}', passage_data)
             if "" in sentences:
                 sentences.remove("")
             if len(sentences) > 1:
@@ -298,10 +255,6 @@ def parse_file(parsed_json, file_name):
                     add_prefix_to_sentences(section_number, text, element)
         return output
     except Exception as e:
-        print(str(e))
-        import traceback;
-        error = traceback.format_exc()
-        print(error)
         raise Exception('Something went wrong while parsing the pdf')
 
 
@@ -313,8 +266,8 @@ def adobe_pdf_parser(upload_file):
         bytes_data = BytesIO(file_data)
         # Initial setup, create credentials instance.
         credentials = Credentials.service_principal_credentials_builder(). \
-            with_client_id("3d9beffdbaef4c54be15b6eada4347ff"). \
-            with_client_secret("p8e-BTNEazAwCgKMUSn9IkMKVx2I8uEA_0rB"). \
+            with_client_id(f'{Constants.ADOBE_CLIENT_ID\}'). \
+            with_client_secret(f"{Constants.ADOBE_CLIENT_SECRET}"). \
             build()
 
         # Create an ExecutionContext using credentials and create a new operation instance.
@@ -322,8 +275,6 @@ def adobe_pdf_parser(upload_file):
         extract_pdf_operation = ExtractPDFOperation.create_new()
 
         # Set operation input from a source file.
-        # source = FileRef.create_from_local_file(file_data)
-
         source = FileRef.create_from_stream(bytes_data, "application/pdf")
         extract_pdf_operation.set_input(source)
 
@@ -344,5 +295,6 @@ def adobe_pdf_parser(upload_file):
         json_data = json.loads(file_content)
         parsed_json = parse_file(json_data, upload_file.name)
         return parsed_json
-    except (ServiceApiException, ServiceUsageException, SdkException):
+    except Exception as e:
         logging.exception("Exception encountered while executing operation")
+        raise Exception('Something went wrong while extracting pdf structure from adobe')
