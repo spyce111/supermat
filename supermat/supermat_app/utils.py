@@ -79,6 +79,7 @@ def extract_timestamp(text):
     match = re.search(pattern, text)
     return match.group(1) if match else None
 
+
 def extract_entities(text_):
     nlp = spacy.load("en_core_web_sm")
     doc = nlp(text_)
@@ -87,6 +88,8 @@ def extract_entities(text_):
         entities_.add(entity)
         # spacy.explain(entity.text)
     return entities_
+
+
 def extract_keywords_spacy(sentence):
     try:
         nlp = spacy.load("en_core_web_sm")
@@ -202,7 +205,8 @@ def parse_file(parsed_json, file_name):
                     'type': 'Text',
                     'structure': f'{section_number_}.{passage_number}.0',
                     'text': passage_data,
-                    'key': list(set(hugging_face_extractor(passage_data)).union(set(extract_keywords_spacy(passage_data)))),
+                    'key': list(
+                        set(hugging_face_extractor(passage_data)).union(set(extract_keywords_spacy(passage_data)))),
                     'properties': properties,
                     'sentences': [],
                     'speaker': extract_roles(passage_data),
@@ -223,7 +227,8 @@ def parse_file(parsed_json, file_name):
                             'type': 'Text',
                             'structure': f'{section_number_}.{passage_number}.{sentence_number}',
                             'text': sentence,
-                            'key': list(set(hugging_face_extractor(sentence)).union(set(extract_keywords_spacy(sentence)))),
+                            'key': list(
+                                set(hugging_face_extractor(sentence)).union(set(extract_keywords_spacy(sentence)))),
                             'properties': properties
                         })
 
