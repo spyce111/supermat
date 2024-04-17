@@ -2,6 +2,7 @@ import re
 import json
 import logging
 import io
+import time
 from io import BytesIO
 import zipfile
 import spacy
@@ -16,7 +17,6 @@ from adobe.pdfservices.operation.io.file_ref import FileRef
 from adobe.pdfservices.operation.pdfops.extract_pdf_operation import ExtractPDFOperation
 from nltk import WordNetLemmatizer, word_tokenize
 from nltk.corpus import stopwords
-from pypdf import PdfWriter
 from transformers import (
     TokenClassificationPipeline,
     AutoModelForTokenClassification,
@@ -24,77 +24,75 @@ from transformers import (
 )
 from transformers.pipelines import AggregationStrategy
 import numpy as np
-from .constants import Constants
+from tqdm import tqdm
+from .constants import Constants, ERROR_LOG, ERROR_NAME, ERROR_FILE, SUCCESS_FILE, SUCCESS_LOG, SUCCESS_NAME, LOG_PATH
 nltk.download('punkt')
 nltk.download('stopwords')
 nltk.download('wordnet')
 
 
-def get_pdf_encoding(file_path):
-    with open(file_path.name, 'r', encoding='utf-8'):
-        reader = PyPDF2.PdfFileReader(file_path.file)
-        try:
-            info = reader.getDocumentInfo()
-            encoding = info.encoding if hasattr(info, 'encoding') else None
-        except UnicodeDecodeError:
-            # If the encoding cannot be determined from the metadata, try reading the file with a specific encoding
-            encoding = 'utf-8'  # You can change this to another encoding if needed
-    return encoding
-
 
 def extract_roles(sentence):
-    # Define the patterns for different roles
-    patterns = {
-        "author": r'(author):',
-        "operator": r'(operator):',
-        "speaker": r'(speaker):',
-        "moderator": r'(moderator):',
-        "guest": r'(guest):'
-    }
-    roles = {}
-    for role, pattern in patterns.items():
-        match = re.search(pattern, sentence, re.IGNORECASE)
-        if match:
-            # Extract the role name after the colon
-            roles[role] = sentence[match.end():].strip()
-    return roles
+    try:
+        # Define the patterns for different roles
+        patterns = {
+            "author": r'(author):',
+            "operator": r'(operator):',
+            "speaker": r'(speaker):',
+            "moderator": r'(moderator):',
+            "guest": r'(guest):'
+        }
+        roles = {}
+        for role, pattern in patterns.items():
+            match = re.search(pattern, sentence, re.IGNORECASE)
+            if match:
+                # Extract the role name after the colon
+                roles[role] = sentence[match.end():].strip()
+        return roles
+    except Exception as e:
+        logging.exception(Constants.ERR_STRING_EXTRACT_ROLES)
+        raise Exception(Constants.ERR_STRING_EXTRACT_ROLES)
 
 def extract_timestamp(text):
-    # Extract timestamp from text
-    pattern = rf'{Constants.TIME_STAMP_REGEX}'
-    match = re.search(pattern, text)
-    return match.group(1) if match else None
+    try:
+        # Extract timestamp from text
+        pattern = rf'{Constants.TIME_STAMP_REGEX}'
+        match = re.search(pattern, text)
+        return match.group(1) if match else None
+    except Exception as e:
+        logging.exception(Constants.ERR_STRING_EXTRACT_TIMESTAMP)
+        raise Exception(Constants.ERR_STRING_EXTRACT_TIMESTAMP)
 
 
 def extract_keywords_spacy(sentence):
     try:
         nlp = spacy.load("en_core_web_sm")
         doc = nlp(sentence)
-
         # Extract meaningful words (nouns, adjectives, verbs, and adverbs)
         keywords = [token.lemma_ for token in doc if token.pos_ in ["NOUN", "ADJ", "VERB", "ADV"]]
-
         # Remove duplicates and return
+        SUCCESS_LOG.info("Spacy Extraction Successful")
         return list(set(keywords))
     except Exception as e:
-        print(str(e))
-        raise Exception('Error while extracting the key words: Hugging face extract')
+        ERROR_LOG.error(str(e))
+        raise Exception(Constants.ERR_STRING_SPACY_EXTRACT)
 
 
 def extract_keywords_nltk(sentence):
-    # Tokenize the sentence
-    tokens = word_tokenize(sentence.lower())
-
-    # Remove stopwords and punctuation
-    stop_words = set(stopwords.words('english'))
-    tokens = [word for word in tokens if word.isalnum() and word not in stop_words]
-
-    # Lemmatize words
-    lemmatizer = WordNetLemmatizer()
-    tokens = [lemmatizer.lemmatize(word) for word in tokens]
-
-    return tokens
-
+    try:
+        # Tokenize the sentence
+        tokens = word_tokenize(sentence.lower())
+        # Remove stopwords and punctuation
+        stop_words = set(stopwords.words('english'))
+        tokens = [word for word in tokens if word.isalnum() and word not in stop_words]
+        # Lemmatize words
+        lemmatizer = WordNetLemmatizer()
+        tokens = [lemmatizer.lemmatize(word) for word in tokens]
+        SUCCESS_LOG.info("NLTK extraction Successful")
+        return tokens
+    except Exception as e:
+        ERROR_LOG.error(Constants.ERR_STRING_NLTK_EXTRACT)
+        raise Exception(Constants.ERR_STRING_NLTK_EXTRACT)
 
 # Define keyphrase extraction pipeline
 class KeyphraseExtractionPipeline(TokenClassificationPipeline):
@@ -120,32 +118,39 @@ def hugging_face_extractor(sentence):
         extractor = KeyphraseExtractionPipeline(model=model_name)
         sentence = sentence.replace("\n", " ")
         keywords = extractor(sentence)
+        SUCCESS_LOG.info("Extraction using Hugging Face Successful")
         return keywords
     except Exception as e:
-        raise Exception('Error while extracting the keywords')
+        ERROR_LOG.error(Constants.ERR_STRING_HUGGING_FACE_EXTRACT)
+        raise Exception(Constants.ERR_STRING_HUGGING_FACE_EXTRACT)
 
 
 def extract_speaker(text):
-    # Extract speaker from text
-    pattern = rf'{Constants.SPEAKER_REGEX}'
-    match = re.search(pattern, text)
-    return match.group(1) if match else None
-
-
-def key_exist_in_json(json_, key_):
-    if key_ in json_.keys():
-        return True
-    return False
+    try:
+        # Extract speaker from text
+        pattern = rf'{Constants.SPEAKER_REGEX}'
+        match = re.search(pattern, text)
+        SUCCESS_LOG.info("Speaker extraction Successful")
+        return match.group(1) if match else None
+    except Exception as e:
+        ERROR_LOG.error(Constants.ERR_STRING_SPEAKER_EXTRACT)
+        raise Exception(Constants.ERR_STRING_SPEAKER_EXTRACT)
 
 
 def is_pdf(file_path):
-    response = file_path.name.lower().endswith('.pdf')
-    if file_path.content_type == 'application/pdf' and response:
-        return True
-    return False
+    try:
+        response = file_path.name.lower().endswith('.pdf')
+        if file_path.content_type == 'application/pdf' and response:
+            SUCCESS_LOG.info("PDF is in correct format")
+            return True
+        return False
+    except Exception as e:
+        ERROR_LOG.error(Constants.ERR_STRING_PDF_CHECK)
+        raise Exception(Constants.ERR_STRING_PDF_CHECK)
 
+# def get_json():
 
-def parse_file(parsed_json, file_name):
+def parse_file(parsed_json, file_name, request_id):
     try:
         section_number = 0
         passage_number = 0
@@ -189,7 +194,7 @@ def parse_file(parsed_json, file_name):
                             'properties': properties
                         })
 
-        for element in parsed_json['elements']:
+        for element in tqdm(parsed_json['elements'], desc="Processing"):
             # Checking for Headers
             if element['Path'][11] == 'H':
                 section_number += 1
@@ -253,12 +258,15 @@ def parse_file(parsed_json, file_name):
                             existing_texts.append(element1['Path'])
                     passage_number += 1
                     add_prefix_to_sentences(section_number, text, element)
+            time.sleep(0.1)
+        SUCCESS_LOG.info(f"JSON generated Successfully, request_id: {request_id}")
         return output
     except Exception as e:
-        raise Exception('Something went wrong while parsing the pdf')
+        ERROR_LOG.error(Constants.ERR_STING_PDF_PARSER)
+        raise Exception(Constants.ERR_STING_PDF_PARSER)
 
 
-def adobe_pdf_parser(upload_file):
+def adobe_pdf_parser(upload_file, request_id):
     try:
         # get base path.
         uploaded_file = upload_file.file
@@ -266,7 +274,7 @@ def adobe_pdf_parser(upload_file):
         bytes_data = BytesIO(file_data)
         # Initial setup, create credentials instance.
         credentials = Credentials.service_principal_credentials_builder(). \
-            with_client_id(f'{Constants.ADOBE_CLIENT_ID\}'). \
+            with_client_id(f'{Constants.ADOBE_CLIENT_ID}'). \
             with_client_secret(f"{Constants.ADOBE_CLIENT_SECRET}"). \
             build()
 
@@ -283,7 +291,6 @@ def adobe_pdf_parser(upload_file):
             .with_element_to_extract(ExtractElementType.TEXT) \
             .build()
         extract_pdf_operation.set_options(extract_pdf_options)
-
         # Execute the operation.
         result: FileRef = extract_pdf_operation.execute(execution_context)
         # Get json structure as binary
@@ -293,8 +300,9 @@ def adobe_pdf_parser(upload_file):
             file_name = zip_file.namelist()[0]
             file_content = zip_file.read(file_name)
         json_data = json.loads(file_content)
-        parsed_json = parse_file(json_data, upload_file.name)
+        parsed_json = parse_file(json_data, upload_file.name, request_id)
+        SUCCESS_LOG.info(f"Adobe json generation is Successful, request_id: {request_id}")
         return parsed_json
     except Exception as e:
-        logging.exception("Exception encountered while executing operation")
-        raise Exception('Something went wrong while extracting pdf structure from adobe')
+        ERROR_LOG.error(Constants.ERR_STRING_ADOBE_PARSER)
+        raise Exception(Constants.ERR_STRING_ADOBE_PARSER)
