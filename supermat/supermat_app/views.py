@@ -28,8 +28,8 @@ class UploadParse(BaseView):
                 raise Exception('Please Provide a PDF file')
             result = adobe_pdf_parser(pdf_path, request_id)
             # Generate the JSON structure
-            self.response['res_data'] = result
-            self.response['res_data']['request_id'] = {f"{request_id}": f"{pdf_path}"}
+            self.response['res_data']['result'] = result
+            self.response['res_data']['request'] = {request_id: pdf_path.name}
             return JsonResponse(data=self.response, safe=False, status=200)
         except Exception as e:
             self.response['res_data'] = {}
