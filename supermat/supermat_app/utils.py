@@ -6,8 +6,15 @@ import time
 from io import BytesIO
 import zipfile
 import spacy
-import nltk
-import yaml
+# import nltk
+from tqdm import tqdm
+from .constants import *
+import uuid
+import traceback
+import sys
+import string
+import numpy as np
+from transformers.pipelines import AggregationStrategy
 from adobe.pdfservices.operation.auth.credentials import Credentials
 from adobe.pdfservices.operation.exception.exceptions import ServiceApiException, ServiceUsageException, SdkException
 from adobe.pdfservices.operation.pdfops.options.extractpdf.extract_pdf_options import ExtractPDFOptions
@@ -22,19 +29,50 @@ from transformers import (
     AutoModelForTokenClassification,
     AutoTokenizer,
 )
-from transformers.pipelines import AggregationStrategy
-import numpy as np
-from tqdm import tqdm
-from .constants import Constants, ERROR_LOG, ERROR_NAME, ERROR_FILE, SUCCESS_FILE, SUCCESS_LOG, SUCCESS_NAME, LOG_PATH
-nltk.download('punkt')
-nltk.download('stopwords')
-nltk.download('wordnet')
+nlp = spacy.load("en_core_web_sm")
 
+class CustomLogger:
 
+    def set_process_id(self,process_id):
+        self.process_id = process_id
+
+    # Creates Log handlers
+    def create_log_file(self,logger_name, log_file):
+        try:
+            logger = logging.getLogger(logger_name)
+            logger.setLevel(logging.DEBUG)
+            formatter = logging.Formatter('%(asctime)s %(levelname)s '+ self.process_id +' %(message)s')
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+            return logger
+        except Exception as e:
+            raise Exception(Constants.ERR_STRING_EXTRACT_ROLES)
+
+    def log_closer(self,logger):
+        try:
+            handlers = logger.handlers[:]
+            for handler in handlers:
+                handler.close()
+                logger.removeHandler(handler)
+        except Exception as e:
+            raise Exception(Constants.ERR_STR_LOG_CLOSE)
+
+def log_create():
+    try:
+        pid = str(uuid.uuid4().hex)
+        custom_process = CustomLogger()
+        custom_process.set_process_id(pid)
+        SUCCESS_LOG = custom_process.create_log_file(SUCCESS_NAME,SUCCESS_FILE)
+        ERROR_LOG = custom_process.create_log_file(ERROR_NAME,ERROR_FILE)
+        return SUCCESS_LOG, ERROR_LOG
+    except Exception as e:
+        raise Exception(Constants.ERR_STR_LOG_CREATE)
 
 def extract_roles(sentence):
     try:
         # Define the patterns for different roles
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         patterns = {
             "author": r'(author):',
             "operator": r'(operator):',
@@ -50,36 +88,40 @@ def extract_roles(sentence):
                 roles[role] = sentence[match.end():].strip()
         return roles
     except Exception as e:
-        logging.exception(Constants.ERR_STRING_EXTRACT_ROLES)
+        trace_back = traceback.format_exc(sys.exc_info())
+        ERROR_LOG.error("Error while Extracing the role: "+str(e)+". Trace Back: "+str(trace_back))
         raise Exception(Constants.ERR_STRING_EXTRACT_ROLES)
 
 def extract_timestamp(text):
     try:
         # Extract timestamp from text
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         pattern = rf'{Constants.TIME_STAMP_REGEX}'
         match = re.search(pattern, text)
         return match.group(1) if match else None
     except Exception as e:
-        logging.exception(Constants.ERR_STRING_EXTRACT_TIMESTAMP)
+        trace_back = traceback.format_exc(sys.exc_info())
+        ERROR_LOG.error("Error while Extracing the timestamp" + str(e)+". Trace Back: "+ str(trace_back))
         raise Exception(Constants.ERR_STRING_EXTRACT_TIMESTAMP)
-
 
 def extract_keywords_spacy(sentence):
     try:
-        nlp = spacy.load("en_core_web_sm")
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         doc = nlp(sentence)
         # Extract meaningful words (nouns, adjectives, verbs, and adverbs)
         keywords = [token.lemma_ for token in doc if token.pos_ in ["NOUN", "ADJ", "VERB", "ADV"]]
+        filtered_words = [word for word in keywords if len(word) >= 4]
         # Remove duplicates and return
-        SUCCESS_LOG.info("Spacy Extraction Successful")
-        return list(set(keywords))
+        # SUCCESS_LOG.info("Spacy Extraction Successful")
+        return list(set(filtered_words))
     except Exception as e:
-        ERROR_LOG.error(str(e))
+        trace_back = traceback.format_exc(sys.exc_info())
+        ERROR_LOG.error("Error while Extracing the keywords using Spacy: "+str(e)+". Trace Back: "+ str(trace_back))
         raise Exception(Constants.ERR_STRING_SPACY_EXTRACT)
-
 
 def extract_keywords_nltk(sentence):
     try:
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         # Tokenize the sentence
         tokens = word_tokenize(sentence.lower())
         # Remove stopwords and punctuation
@@ -88,18 +130,19 @@ def extract_keywords_nltk(sentence):
         # Lemmatize words
         lemmatizer = WordNetLemmatizer()
         tokens = [lemmatizer.lemmatize(word) for word in tokens]
-        SUCCESS_LOG.info("NLTK extraction Successful")
+        # SUCCESS_LOG.info("NLTK extraction Successful")
         return tokens
     except Exception as e:
-        ERROR_LOG.error(Constants.ERR_STRING_NLTK_EXTRACT)
+        trace_back = traceback.format_exc(sys.exc_info())
+        ERROR_LOG.error("Error while Extracing the keywords using NLTK: "+str(e)+". Trace Back: "+ str(trace_back))
         raise Exception(Constants.ERR_STRING_NLTK_EXTRACT)
 
 # Define keyphrase extraction pipeline
 class KeyphraseExtractionPipeline(TokenClassificationPipeline):
-    def __init__(self, model, *args, **kwargs):
+    def __init__(self, model_name, *args, **kwargs):
         super().__init__(
-            model=AutoModelForTokenClassification.from_pretrained(model),
-            tokenizer=AutoTokenizer.from_pretrained(model),
+            model=AutoModelForTokenClassification.from_pretrained(model_name),
+            tokenizer=AutoTokenizer.from_pretrained(model_name),
             *args,
             **kwargs
         )
@@ -111,198 +154,176 @@ class KeyphraseExtractionPipeline(TokenClassificationPipeline):
         )
         return np.unique([result.get("word").strip() for result in results])
 
+# Load the model outside the function to reuse it
+MODEL_NAME = Constants.HUGGING_FACE_MODEL_NAME
+EXTRACTOR = KeyphraseExtractionPipeline(MODEL_NAME)
 
 def hugging_face_extractor(sentence):
     try:
-        model_name = f'{Constants.HUGGING_FACE_MODEL_NAME}'
-        extractor = KeyphraseExtractionPipeline(model=model_name)
-        sentence = sentence.replace("\n", " ")
-        keywords = extractor(sentence)
-        SUCCESS_LOG.info("Extraction using Hugging Face Successful")
+        cleaned_sentence = sentence.replace("\n", " ")
+        # Process the sentence
+        keywords = EXTRACTOR(cleaned_sentence)
         return keywords
     except Exception as e:
-        ERROR_LOG.error(Constants.ERR_STRING_HUGGING_FACE_EXTRACT)
+        trace_back = traceback.format_exc(sys.exc_info())
+        ERROR_LOG.error(f"Error while extracting keywords using Hugging Face: {str(e)}. Trace Back: {str(trace_back)}")
         raise Exception(Constants.ERR_STRING_HUGGING_FACE_EXTRACT)
 
 
-def extract_speaker(text):
+def remove_special_characters_from_list(lst):
     try:
-        # Extract speaker from text
-        pattern = rf'{Constants.SPEAKER_REGEX}'
-        match = re.search(pattern, text)
-        SUCCESS_LOG.info("Speaker extraction Successful")
-        return match.group(1) if match else None
+        # Create translation table
+        table = str.maketrans('', '', string.punctuation)
+        # Remove special characters from each string in the list
+        cleaned_lst = [s.translate(table) for s in lst]
+        # Remove empty strings
+        cleaned_lst = [s for s in cleaned_lst if s]
+        return list(set(cleaned_lst))
     except Exception as e:
-        ERROR_LOG.error(Constants.ERR_STRING_SPEAKER_EXTRACT)
-        raise Exception(Constants.ERR_STRING_SPEAKER_EXTRACT)
-
+        trace_back = traceback.format_exc(sys.exc_info())
+        ERROR_LOG.error(f"Error while removing the special chanracters from the keywords : {str(e)}. Trace Back: {str(trace_back)}")
+        raise Exception(Constants.ERR_STR_REMOVE_SPECIAL_CHAR)
 
 def is_pdf(file_path):
     try:
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         response = file_path.name.lower().endswith('.pdf')
         if file_path.content_type == 'application/pdf' and response:
             SUCCESS_LOG.info("PDF is in correct format")
             return True
         return False
     except Exception as e:
-        ERROR_LOG.error(Constants.ERR_STRING_PDF_CHECK)
+        trace_back = traceback.format_exc(sys.exc_info())
+        ERROR_LOG.error("Error while checking the type: "+ str(e)+ ". Trace Back: "+str(trace_back))
         raise Exception(Constants.ERR_STRING_PDF_CHECK)
-
-# def get_json():
 
 def parse_file(parsed_json, file_name, request_id):
     try:
+        output = []
+        existing_texts = set()
+        def add_prefix_to_sentences(section_number_, passage_data, element_):
+            keys_to_check = ['Bounds', 'Font', 'HasClip', 'Lang', 'ObjectID', 'Page', 'Path', 'TextSize', 'attributes']
+            properties = {key: element_.get(key) for key in keys_to_check if key in element_}
+            keywords = set(hugging_face_extractor(passage_data)).union(extract_keywords_spacy(passage_data))
+            output.append({
+                'type': 'Text',
+                'structure': f'{section_number_}.{passage_number}.0',
+                'text': passage_data,
+                'key': remove_special_characters_from_list(keywords),
+                'properties': properties,
+                'sentences': [],
+                'speaker': extract_roles(passage_data),
+                'document': file_name,
+                'timestamp': extract_timestamp(passage_data)
+            })
+            sentences = re.split(rf'{Constants.SPLIT_SENTENCE_REGEX}', passage_data)
+            sentences = [s.strip() for s in sentences if s]
+            if len(sentences) > 1:
+                for i, sentence in enumerate(sentences, start=1):
+                    keywords = set(hugging_face_extractor(sentence)).union(extract_keywords_spacy(sentence))
+                    output[-1]['sentences'].append({
+                        'type': 'Text',
+                        'structure': f'{section_number_}.{passage_number}.{i}',
+                        'text': sentence,
+                        'key': remove_special_characters_from_list(keywords),
+                        'properties': properties
+                    })
         section_number = 0
         passage_number = 0
         figure_count = 0
-        output = []
-        existing_texts = []
-
-        def add_prefix_to_sentences(section_number_, passage_data, element_):
-            sentence_number = 0
-            keys_to_check = ['Bounds', 'Font', 'HasClip', 'Lang', 'ObjectID', 'Page', 'Path', 'TextSize', 'attributes']
-            properties = {key: element_.get(key) for key in keys_to_check if key in element_.keys()}
-            output.append(
-                {
-                    'type': 'Text',
-                    'structure': f'{section_number_}.{passage_number}.0',
-                    'text': passage_data,
-                    'key': list(
-                        set(hugging_face_extractor(passage_data)).union(set(extract_keywords_spacy(passage_data)))),
-                    'properties': properties,
-                    'sentences': [],
-                    'speaker': extract_roles(passage_data),
-                    'document': file_name,
-                    'timestamp': extract_timestamp(passage_data)
-                }
-            )
-            # Split the sentences from a passage
-            sentences = re.split(rf'{Constants.SPLIT_SENTENCE_REGEX}', passage_data)
-            if "" in sentences:
-                sentences.remove("")
-            if len(sentences) > 1:
-                for sentence in sentences:
-                    sentence.strip()
-                    sentence_number += 1
-                    output[-1]['sentences'].append(
-                        {
-                            'type': 'Text',
-                            'structure': f'{section_number_}.{passage_number}.{sentence_number}',
-                            'text': sentence,
-                            'key': list(
-                                set(hugging_face_extractor(sentence)).union(set(extract_keywords_spacy(sentence)))),
-                            'properties': properties
-                        })
-
         for element in tqdm(parsed_json['elements'], desc="Processing"):
-            # Checking for Headers
-            if element['Path'][11] == 'H':
+            path_type = element['Path'][11]
+            if path_type == 'H':
                 section_number += 1
                 passage_number = 0
                 add_prefix_to_sentences(section_number, element['Text'], element)
-            # Checking for Passages
-            elif element['Path'][11] == 'P':
+            elif path_type == 'P':
                 passage_number += 1
+                text = element['Text']
                 if element['Path'].endswith('ParagraphSpan'):
-                    text = element['Text']
                     pattern = re.compile(rf"{re.escape(element['Path'])}\[\d+\]")
-                    for element1 in parsed_json['elements']:
-                        if pattern.match(element1['Path']) and element1['Path'] not in existing_texts:
-                            text += element1['Text']
-                            existing_texts.append(element1['Path'])
-                    add_prefix_to_sentences(section_number, text, element)
-                else:
-                    if 'ParagraphSpan' not in element['Path']:
-                        add_prefix_to_sentences(section_number, element['Text'], element)
-            # Checking for Images
+                    text += ''.join(elem['Text'] for elem in parsed_json['elements'] if pattern.match(elem['Path']) and elem['Path'] not in existing_texts)
+                add_prefix_to_sentences(section_number, text, element)
             elif 'Figure' in element['Path']:
                 passage_number += 1
-                output.append(
-                    {
-                        'type': 'Image',
-                        'structure': f'{section_number}.{passage_number}.0',
-                        'figure': f'FIGURE {figure_count}',
-                        'Bounds': element["Bounds"],
-                        'ObjectId': element["ObjectID"],
-                        'Page': element["Page"],
-                        'Path': element["Path"],
-                        'attributes': element["attributes"]
-                    }
-                )
+                output.append({
+                    'type': 'Image',
+                    'structure': f'{section_number}.{passage_number}.0',
+                    'figure': f'FIGURE {figure_count}',
+                    'Bounds': element['Bounds'],
+                    'ObjectId': element['ObjectID'],
+                    'Page': element['Page'],
+                    'Path': element['Path'],
+                    'attributes': element['attributes']
+                })
                 figure_count += 1
-            # Checking for List Items
-            elif element['Path'][11] == 'L':
+            elif path_type == 'L':
                 match = re.match(r'^.*?/LI', element['Path'])
                 if match:
                     length_until_li = len(match.group())
-                text1 = element['Text']
-                existing_texts.append(element['Path'])
-                for element2 in parsed_json['elements']:
-                    if element2['Path'][11] == 'L':
-                        if element2['Path'][:length_until_li] + "/Lbl" == element['Path'] and element2[
-                            'Path'] not in existing_texts:
+                    text = element['Text']
+                    for elem in parsed_json['elements']:
+                        if elem['Path'][11] == 'L' and elem['Path'][:length_until_li] + "/Lbl" == element['Path']:
                             section_number += 1
                             passage_number = 0
-                            text1 += element2['Text']
-                            existing_texts.append(element2['Path'])
-                            add_prefix_to_sentences(section_number, text1, element)
-            # All the elements having text
+                            text += elem['Text']
+                    add_prefix_to_sentences(section_number, text, element)
             else:
-                if 'Text' in element.keys() and element['Path'] not in existing_texts:
+                if 'Text' in element and element['Path'] not in existing_texts:
                     text = element['Text']
                     pattern = re.compile(rf"{re.escape(element['Path'])}\[\d+\]")
-                    for element1 in parsed_json['elements']:
-                        if pattern.match(element1['Path']) and 'Text' in element1.keys() and element1['Path'] not in \
-                                existing_texts:
-                            text += element1['Text']
-                            existing_texts.append(element1['Path'])
+                    text += ''.join(elem['Text'] for elem in parsed_json['elements'] if pattern.match(elem['Path']) and 'Text' in elem and elem['Path'] not in existing_texts)
                     passage_number += 1
                     add_prefix_to_sentences(section_number, text, element)
             time.sleep(0.1)
-        SUCCESS_LOG.info(f"JSON generated Successfully, request_id: {request_id}")
+        SUCCESS_LOG.info(Constants.ERR_STR_PARSE_PDF.format(request_id=request_id))
         return output
     except Exception as e:
-        ERROR_LOG.error(Constants.ERR_STING_PDF_PARSER)
+        trace_back = traceback.format_exc(sys.exc_info())
+        ERROR_LOG.error(f"Error while parsing the file: parse_file {str(e)}. Traceback: {str(trace_back)}")
         raise Exception(Constants.ERR_STING_PDF_PARSER)
-
 
 def adobe_pdf_parser(upload_file, request_id):
     try:
-        # get base path.
-        uploaded_file = upload_file.file
-        file_data = uploaded_file.read()
-        bytes_data = BytesIO(file_data)
-        # Initial setup, create credentials instance.
-        credentials = Credentials.service_principal_credentials_builder(). \
-            with_client_id(f'{Constants.ADOBE_CLIENT_ID}'). \
-            with_client_secret(f"{Constants.ADOBE_CLIENT_SECRET}"). \
-            build()
+        # Read the uploaded file
+        uploaded_file_data = upload_file.file.read()
+        
+        # Setup Adobe credentials
+        credentials = Credentials.service_principal_credentials_builder() \
+            .with_client_id(Constants.ADOBE_CLIENT_ID) \
+            .with_client_secret(Constants.ADOBE_CLIENT_SECRET) \
+            .build()
 
-        # Create an ExecutionContext using credentials and create a new operation instance.
+        # Create an ExecutionContext using credentials and create a new operation instance
         execution_context = ExecutionContext.create(credentials)
         extract_pdf_operation = ExtractPDFOperation.create_new()
 
-        # Set operation input from a source file.
-        source = FileRef.create_from_stream(bytes_data, "application/pdf")
+        # Set operation input from a source file
+        source = FileRef.create_from_stream(BytesIO(uploaded_file_data), "application/pdf")
         extract_pdf_operation.set_input(source)
 
         # Build ExtractPDF options and set them into the operation
-        extract_pdf_options: ExtractPDFOptions = ExtractPDFOptions.builder() \
+        extract_pdf_options = ExtractPDFOptions.builder() \
             .with_element_to_extract(ExtractElementType.TEXT) \
             .build()
         extract_pdf_operation.set_options(extract_pdf_options)
-        # Execute the operation.
-        result: FileRef = extract_pdf_operation.execute(execution_context)
-        # Get json structure as binary
+
+        # Execute the operation and get the result
+        result = extract_pdf_operation.execute(execution_context)
         binary_stream = result.get_as_stream()
-        bytes_stream = io.BytesIO(binary_stream)
-        with zipfile.ZipFile(bytes_stream, 'r') as zip_file:
+
+        # Extract JSON data from the zip file
+        with zipfile.ZipFile(BytesIO(binary_stream), 'r') as zip_file:
             file_name = zip_file.namelist()[0]
             file_content = zip_file.read(file_name)
+        
         json_data = json.loads(file_content)
         parsed_json = parse_file(json_data, upload_file.name, request_id)
-        SUCCESS_LOG.info(f"Adobe json generation is Successful, request_id: {request_id}")
+        
+        SUCCESS_LOG.info(Constants.ERR_STR_PARSE_PDF.format(request_id=request_id))
         return parsed_json
     except Exception as e:
-        ERROR_LOG.error(Constants.ERR_STRING_ADOBE_PARSER)
+        trace_back = traceback.format_exc(sys.exc_info())
+        ERROR_LOG.error(f"Error while parsing the pdf: adobe_pdf_parser {str(e)}. Traceback: {str(trace_back)}")
         raise Exception(Constants.ERR_STRING_ADOBE_PARSER)
+

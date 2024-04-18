@@ -1,5 +1,7 @@
+# OS: Ubuntu 22.04 image
 FROM ubuntu:22.04
 
+# Non interactive
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Update package lists and install necessary packages
@@ -31,11 +33,18 @@ RUN wget https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/0.12.4/wkh
 
 # Set working directory
 WORKDIR /rest/supermat
-
+RUN mkdir logs /rest/logs
 # Copy requirements and install dependencies
 COPY ./requirements.txt ./
 RUN pip3 install wheel && \
     pip3 install -r requirements.txt
 
+# NLTK and spcay specific package install
+RUN python3 -m nltk.downloader punkt stopwords wordnet && \
+    python3 -m spacy download en_core_web_sm
+
 # Copy project files
 COPY ./ /rest/supermat
+
+# Django Model initial Migrate
+RUN python3 manage.py migrate

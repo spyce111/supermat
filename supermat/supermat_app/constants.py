@@ -6,9 +6,12 @@ SUCCESS_NAME = 'Success_Log'
 SUCCESS_FILE = '/rest/logs/supermat.log'
 ERROR_LOG = logging.getLogger(ERROR_NAME)
 SUCCESS_LOG = logging.getLogger(SUCCESS_NAME)
+
 class Constants:
+    
     def __init__(self):
         pass
+
     TIME_STAMP_REGEX = "(\b\d{1,2}[:]\d{2}\s(?:AM|PM)\sET\b)"
     HUGGING_FACE_MODEL_NAME = "ml6team/keyphrase-extraction-distilbert-inspec"
     SPEAKER_REGEX = "(Operator|Speaker|Moderator|Guest Speaker):"
@@ -24,3 +27,8 @@ class Constants:
     ERR_STRING_PDF_CHECK = "Error while cheking the PDF type"
     ERR_STING_PDF_PARSER = "Error while parsing the adobe generated json"
     ERR_STRING_ADOBE_PARSER = 'Something went wrong while extracting pdf structure from adobe'
+    ERR_STR_LOG_CLOSE = "Error while closing the log file"
+    ERR_STR_LOG_CREATE = "Error while creating the log file"
+    ERR_STR_PARSE_PDF= "JSON generated Successfully, request_id: {request_id}"
+    ERR_STR_REMOVE_SPECIAL_CHAR = "Error while removing the special chanracters from the keywords"
+    ERR_STR_GENERIC = "Something went wrong please try again later"
