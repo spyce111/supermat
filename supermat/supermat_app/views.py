@@ -4,7 +4,7 @@ from django.views.generic import View
 from django.http.response import JsonResponse, HttpResponse
 from .utils import *
 from .constants import Constants
-
+import traceback
 # Create your views here.
 class BaseView(View):
 
@@ -19,6 +19,7 @@ class UploadParse(BaseView):
 
     def post(self, request):
         try:
+            SUCCESS_LOG, ERROR_LOG = log_create()
             # Path to the PDF file
             from datetime import datetime
             start = datetime.now()
@@ -36,4 +37,6 @@ class UploadParse(BaseView):
         except Exception as e:
             self.response['res_data'] = {}
             self.response['res_str'] = Constants.ERR_STR_GENERIC
+            trace_back = traceback.format_exc()
+            ERROR_LOG.error("Error while UploadParse : "+ str(e)+ ". Trace Back: "+str(trace_back)) 
             return JsonResponse(data=self.response, safe=True, status=400)

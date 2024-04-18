@@ -1,8 +1,6 @@
 import re
 import json
 import logging
-import io
-import time
 from io import BytesIO
 import zipfile
 import spacy
@@ -11,9 +9,9 @@ from tqdm import tqdm
 from .constants import *
 import uuid
 import traceback
-import sys
 import string
-import numpy as np
+import difflib
+# import numpy as np
 from transformers.pipelines import AggregationStrategy
 from adobe.pdfservices.operation.auth.credentials import Credentials
 from adobe.pdfservices.operation.exception.exceptions import ServiceApiException, ServiceUsageException, SdkException
@@ -24,11 +22,12 @@ from adobe.pdfservices.operation.io.file_ref import FileRef
 from adobe.pdfservices.operation.pdfops.extract_pdf_operation import ExtractPDFOperation
 from nltk import WordNetLemmatizer, word_tokenize
 from nltk.corpus import stopwords
-from transformers import (
-    TokenClassificationPipeline,
-    AutoModelForTokenClassification,
-    AutoTokenizer,
-)
+from nltk.tag import pos_tag
+# from transformers import (
+#     TokenClassificationPipeline,
+#     AutoModelForTokenClassification,
+#     AutoTokenizer,
+# )
 nlp = spacy.load("en_core_web_sm")
 
 class CustomLogger:
@@ -88,7 +87,7 @@ def extract_roles(sentence):
                 roles[role] = sentence[match.end():].strip()
         return roles
     except Exception as e:
-        trace_back = traceback.format_exc(sys.exc_info())
+        trace_back = traceback.format_exc()
         ERROR_LOG.error("Error while Extracing the role: "+str(e)+". Trace Back: "+str(trace_back))
         raise Exception(Constants.ERR_STRING_EXTRACT_ROLES)
 
@@ -100,7 +99,7 @@ def extract_timestamp(text):
         match = re.search(pattern, text)
         return match.group(1) if match else None
     except Exception as e:
-        trace_back = traceback.format_exc(sys.exc_info())
+        trace_back = traceback.format_exc()
         ERROR_LOG.error("Error while Extracing the timestamp" + str(e)+". Trace Back: "+ str(trace_back))
         raise Exception(Constants.ERR_STRING_EXTRACT_TIMESTAMP)
 
@@ -115,9 +114,24 @@ def extract_keywords_spacy(sentence):
         # SUCCESS_LOG.info("Spacy Extraction Successful")
         return list(set(filtered_words))
     except Exception as e:
-        trace_back = traceback.format_exc(sys.exc_info())
+        trace_back = traceback.format_exc()
         ERROR_LOG.error("Error while Extracing the keywords using Spacy: "+str(e)+". Trace Back: "+ str(trace_back))
         raise Exception(Constants.ERR_STRING_SPACY_EXTRACT)
+
+def extract_meaningful_words(sentence):
+    try:
+        # Tokenize the sentence
+        tokens = word_tokenize(sentence.lower())
+        # Perform POS tagging
+        tagged_tokens = pos_tag(tokens)
+        # Extract nouns, verbs, adjectives, and adverbs
+        meaningful_words = [word for word, tag in tagged_tokens if tag.startswith(('NN', 'VB', 'JJ', 'RB'))]
+        filtered_words = [word for word in meaningful_words if len(word) >= 4]
+        return list(set(filtered_words))
+    except Exception as e:
+        trace_back = traceback.format_exc()
+        ERROR_LOG.error("Error while Extracing the keywords using NLTK: "+str(e)+". Trace Back: "+ str(trace_back))
+        raise Exception(Constants.ERR_STRING_NLTK_EXTRACT)
 
 def extract_keywords_nltk(sentence):
     try:
@@ -133,55 +147,73 @@ def extract_keywords_nltk(sentence):
         # SUCCESS_LOG.info("NLTK extraction Successful")
         return tokens
     except Exception as e:
-        trace_back = traceback.format_exc(sys.exc_info())
+        trace_back = traceback.format_exc()
         ERROR_LOG.error("Error while Extracing the keywords using NLTK: "+str(e)+". Trace Back: "+ str(trace_back))
         raise Exception(Constants.ERR_STRING_NLTK_EXTRACT)
 
 # Define keyphrase extraction pipeline
-class KeyphraseExtractionPipeline(TokenClassificationPipeline):
-    def __init__(self, model_name, *args, **kwargs):
-        super().__init__(
-            model=AutoModelForTokenClassification.from_pretrained(model_name),
-            tokenizer=AutoTokenizer.from_pretrained(model_name),
-            *args,
-            **kwargs
-        )
+# class KeyphraseExtractionPipeline(TokenClassificationPipeline):
+#     def __init__(self, model_name, *args, **kwargs):
+#         super().__init__(
+#             model=AutoModelForTokenClassification.from_pretrained(model_name),
+#             tokenizer=AutoTokenizer.from_pretrained(model_name),
+#             *args,
+#             **kwargs
+#         )
 
-    def postprocess(self, all_outputs):
-        results = super().postprocess(
-            all_outputs=all_outputs,
-            aggregation_strategy=AggregationStrategy.FIRST,
-        )
-        return np.unique([result.get("word").strip() for result in results])
+#     def postprocess(self, all_outputs):
+#         results = super().postprocess(
+#             all_outputs=all_outputs,
+#             aggregation_strategy=AggregationStrategy.FIRST,
+#         )
+#         return np.unique([result.get("word").strip() for result in results])
 
-# Load the model outside the function to reuse it
-MODEL_NAME = Constants.HUGGING_FACE_MODEL_NAME
-EXTRACTOR = KeyphraseExtractionPipeline(MODEL_NAME)
+# # Load the model outside the function to reuse it
+# MODEL_NAME = Constants.HUGGING_FACE_MODEL_NAME
+# EXTRACTOR = KeyphraseExtractionPipeline(MODEL_NAME)
 
-def hugging_face_extractor(sentence):
+# def hugging_face_extractor(sentence):
+#     try:
+#         cleaned_sentence = sentence.replace("\n", " ")
+#         # Process the sentence
+#         keywords = EXTRACTOR(cleaned_sentence)
+#         return keywords
+#     except Exception as e:
+#         trace_back = traceback.format_exc()
+#         ERROR_LOG.error(f"Error while extracting keywords using Hugging Face: {str(e)}. Trace Back: {str(trace_back)}")
+#         raise Exception(Constants.ERR_STRING_HUGGING_FACE_EXTRACT)
+
+
+def remove_similar_words(word_list, threshold=0.8):
     try:
-        cleaned_sentence = sentence.replace("\n", " ")
-        # Process the sentence
-        keywords = EXTRACTOR(cleaned_sentence)
-        return keywords
-    except Exception as e:
-        trace_back = traceback.format_exc(sys.exc_info())
-        ERROR_LOG.error(f"Error while extracting keywords using Hugging Face: {str(e)}. Trace Back: {str(trace_back)}")
-        raise Exception(Constants.ERR_STRING_HUGGING_FACE_EXTRACT)
+        cleaned_list = []
+        word_set = set(word_list)
 
+        for word in word_set:
+            if all(difflib.SequenceMatcher(None, word, w).ratio() < threshold for w in cleaned_list):
+                cleaned_list.append(word)
+        return list(set(cleaned_list))
+    except Exception as e:
+        trace_back = traceback.format_exc()
+        ERROR_LOG.error(f"Error while removing the similar words from the keywords : {str(e)}. Trace Back: {str(trace_back)}")
+        raise Exception(Constants.ERR_STR_REMOVE_SPECIAL_CHAR)
 
 def remove_special_characters_from_list(lst):
     try:
         # Create translation table
-        table = str.maketrans('', '', string.punctuation)
+        table = str.maketrans(string.punctuation, ' ' * len(string.punctuation))
         # Remove special characters from each string in the list
         cleaned_lst = [s.translate(table) for s in lst]
+        # Remove extra spaces
+        cleaned_lst = [' '.join(s.split()) for s in cleaned_lst]
         # Remove empty strings
         cleaned_lst = [s for s in cleaned_lst if s]
-        return list(set(cleaned_lst))
+        # Remove similar words
+        cleaned_lst = remove_similar_words(list(set(cleaned_lst)))
+        return cleaned_lst
     except Exception as e:
-        trace_back = traceback.format_exc(sys.exc_info())
-        ERROR_LOG.error(f"Error while removing the special chanracters from the keywords : {str(e)}. Trace Back: {str(trace_back)}")
+        trace_back = traceback.format_exc()
+        ERROR_LOG.error(f"Error while removing the special characters from the keywords: {str(e)}. Trace Back: {str(trace_back)}")
         raise Exception(Constants.ERR_STR_REMOVE_SPECIAL_CHAR)
 
 def is_pdf(file_path):
@@ -189,22 +221,22 @@ def is_pdf(file_path):
         # SUCCESS_LOG, ERROR_LOG = log_create()
         response = file_path.name.lower().endswith('.pdf')
         if file_path.content_type == 'application/pdf' and response:
-            SUCCESS_LOG.info("PDF is in correct format")
             return True
         return False
     except Exception as e:
-        trace_back = traceback.format_exc(sys.exc_info())
+        trace_back = traceback.format_exc()
         ERROR_LOG.error("Error while checking the type: "+ str(e)+ ". Trace Back: "+str(trace_back))
         raise Exception(Constants.ERR_STRING_PDF_CHECK)
 
 def parse_file(parsed_json, file_name, request_id):
     try:
+        SUCCESS_LOG, ERROR_LOG = log_create()
         output = []
         existing_texts = set()
         def add_prefix_to_sentences(section_number_, passage_data, element_):
             keys_to_check = ['Bounds', 'Font', 'HasClip', 'Lang', 'ObjectID', 'Page', 'Path', 'TextSize', 'attributes']
             properties = {key: element_.get(key) for key in keys_to_check if key in element_}
-            keywords = set(hugging_face_extractor(passage_data)).union(extract_keywords_spacy(passage_data))
+            keywords = set(extract_keywords_spacy(passage_data)).union(extract_meaningful_words(passage_data))
             output.append({
                 'type': 'Text',
                 'structure': f'{section_number_}.{passage_number}.0',
@@ -220,7 +252,7 @@ def parse_file(parsed_json, file_name, request_id):
             sentences = [s.strip() for s in sentences if s]
             if len(sentences) > 1:
                 for i, sentence in enumerate(sentences, start=1):
-                    keywords = set(hugging_face_extractor(sentence)).union(extract_keywords_spacy(sentence))
+                    keywords = set(extract_keywords_spacy(sentence)).union(extract_meaningful_words(sentence))
                     output[-1]['sentences'].append({
                         'type': 'Text',
                         'structure': f'{section_number_}.{passage_number}.{i}',
@@ -275,16 +307,16 @@ def parse_file(parsed_json, file_name, request_id):
                     text += ''.join(elem['Text'] for elem in parsed_json['elements'] if pattern.match(elem['Path']) and 'Text' in elem and elem['Path'] not in existing_texts)
                     passage_number += 1
                     add_prefix_to_sentences(section_number, text, element)
-            time.sleep(0.1)
         SUCCESS_LOG.info(Constants.ERR_STR_PARSE_PDF.format(request_id=request_id))
         return output
     except Exception as e:
-        trace_back = traceback.format_exc(sys.exc_info())
+        trace_back = traceback.format_exc()
         ERROR_LOG.error(f"Error while parsing the file: parse_file {str(e)}. Traceback: {str(trace_back)}")
         raise Exception(Constants.ERR_STING_PDF_PARSER)
 
 def adobe_pdf_parser(upload_file, request_id):
     try:
+        SUCCESS_LOG, ERROR_LOG = log_create()
         # Read the uploaded file
         uploaded_file_data = upload_file.file.read()
         
@@ -322,8 +354,11 @@ def adobe_pdf_parser(upload_file, request_id):
         
         SUCCESS_LOG.info(Constants.ERR_STR_PARSE_PDF.format(request_id=request_id))
         return parsed_json
+    except (ServiceApiException, ServiceUsageException, SdkException) as e:
+        trace_back = traceback.format_exc()
+        ERROR_LOG.critical(f"Adobe Internal Exception: adobe_pdf_parser {str(e)}. Traceback: {str(trace_back)}")
+        raise Exception(Constants.ERR_STRING_ADOBE_PARSER)
     except Exception as e:
-        trace_back = traceback.format_exc(sys.exc_info())
+        trace_back = traceback.format_exc()
         ERROR_LOG.error(f"Error while parsing the pdf: adobe_pdf_parser {str(e)}. Traceback: {str(trace_back)}")
         raise Exception(Constants.ERR_STRING_ADOBE_PARSER)
-

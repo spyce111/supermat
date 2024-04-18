@@ -1,6 +1,6 @@
 Django==2.2
 pdfservices-sdk==2.3.1
-transformers==4.39.3
-torch==2.2.2
+# transformers==4.39.3
+# torch==2.2.2
 spacy==3.7.4
 nltk==3.8.1

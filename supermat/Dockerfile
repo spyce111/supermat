@@ -40,7 +40,7 @@ RUN pip3 install wheel && \
     pip3 install -r requirements.txt
 
 # NLTK and spcay specific package install
-RUN python3 -m nltk.downloader punkt stopwords wordnet && \
+RUN python3 -m nltk.downloader punkt stopwords wordnet averaged_perceptron_tagger && \
     python3 -m spacy download en_core_web_sm
 
 # Copy project files
