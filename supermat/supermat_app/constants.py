@@ -7,7 +7,7 @@ SUCCESS_FILE = '/rest/logs/supermat.log'
 ERROR_LOG = logging.getLogger(ERROR_NAME)
 SUCCESS_LOG = logging.getLogger(SUCCESS_NAME)
 
-class Constants:
+class SupermatConstants:
     
     def __init__(self):
         pass
@@ -16,8 +16,8 @@ class Constants:
     HUGGING_FACE_MODEL_NAME = "ml6team/keyphrase-extraction-distilbert-inspec"
     SPEAKER_REGEX = "(Operator|Speaker|Moderator|Guest Speaker):"
     SPLIT_SENTENCE_REGEX = "(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s"
-    ADOBE_CLIENT_ID = "3d9beffdbaef4c54be15b6eada4347ff"
-    ADOBE_CLIENT_SECRET = "p8e-BTNEazAwCgKMUSn9IkMKVx2I8uEA_0rB"
+    ADOBE_CLIENT_ID = "d16b66b7d5844c9c80f81a3a5c0e7aad"
+    ADOBE_CLIENT_SECRET = "p8e-DF136Wyl_9kWCfzwMsQKJ8cL3g7Whed1"
     ERR_STRING_EXTRACT_ROLES = "Error while extracting roles"
     ERR_STRING_EXTRACT_TIMESTAMP = "Error while extracting Timestamp"
     ERR_STRING_HUGGING_FACE_EXTRACT = 'Error while extracting the key words: Hugging face extract'
@@ -32,3 +32,4 @@ class Constants:
     ERR_STR_PARSE_PDF= "JSON generated Successfully, request_id: {request_id}"
     ERR_STR_REMOVE_SPECIAL_CHAR = "Error while removing the special chanracters from the keywords"
     ERR_STR_GENERIC = "Something went wrong please try again later"
+    ERR_STR_EXTRACt_ANNOT = "Error extracting annotations"
