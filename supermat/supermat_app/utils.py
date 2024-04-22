@@ -192,16 +192,19 @@ def extract_timestamp(text):
         ERROR_LOG.error("Error while Extracing the timestamp" + str(e)+". Trace Back: "+ str(trace_back))
         raise Exception(SupermatConstants.ERR_STRING_EXTRACT_TIMESTAMP)
 
+
 def extract_keywords_spacy(sentence):
     try:
         SUCCESS_LOG, ERROR_LOG = log_create()
         doc = nlp(sentence)
-        # Extract meaningful words (nouns, adjectives, verbs, and adverbs)
-        keywords = [token.lemma_ for token in doc if token.pos_ in ["NOUN", "ADJ", "VERB", "ADV"]]
-        filtered_words = [word for word in keywords if len(word) >= 4]
-        # Remove duplicates and return
-        # SUCCESS_LOG.info("Spacy Extraction Successful")
-        return list(set(filtered_words))
+        # Extract words with more than 4 characters, numerics, nouns, verbs, adverbs, and adjectives excluding pronouns
+        keywords = [token.text for token in doc if ((token.is_alpha and \
+                                                     len(token.text) > 4) \
+                                                    or (token.is_digit)) \
+                                                    and token.pos_ in \
+                                                    ['NUM', 'NOUN', 'VERB', 'ADV', 'ADJ']]
+        SUCCESS_LOG.info("Spacy Extraction Successful")
+        return list(set(keywords))
     except Exception as e:
         trace_back = traceback.format_exc()
         ERROR_LOG.error("Error while Extracing the keywords using Spacy: "+str(e)+". Trace Back: "+ str(trace_back))
@@ -211,13 +214,16 @@ def extract_meaningful_words(sentence):
     try:
         SUCCESS_LOG, ERROR_LOG = log_create()
         # Tokenize the sentence
-        tokens = word_tokenize(sentence.lower())
+        tokens = word_tokenize(sentence)
         # Perform POS tagging
         tagged_tokens = pos_tag(tokens)
-        # Extract nouns, verbs, adjectives, and adverbs
-        meaningful_words = [word for word, tag in tagged_tokens if tag.startswith(('NN', 'VB', 'JJ', 'RB'))]
-        filtered_words = [word for word in meaningful_words if len(word) >= 4]
-        return list(set(filtered_words))
+        # Extract words with more than 4 characters, numerics, nouns, verbs, adverbs, and adjectives excluding pronouns
+        keywords = [word for word, tag in tagged_tokens \
+                    if ((tag.startswith(('NN', 'VB', 'JJ', 'RB')) and\
+                          len(word) > 4) or (tag == 'CD')) and \
+                            word.lower() != 'i']
+        SUCCESS_LOG.info("Meaningfull words Extraction Successful")
+        return list(set(keywords))
     except Exception as e:
         trace_back = traceback.format_exc()
         ERROR_LOG.error("Error while Extracing the keywords using NLTK: "+str(e)+". Trace Back: "+ str(trace_back))
@@ -346,7 +352,7 @@ def parse_file(parsed_json, file_name, request_id):
                 'type': 'Text',
                 'structure': f'{section_number_}.{passage_number}.0',
                 'text': passage_data,
-                'key': remove_special_characters_from_list(keywords),
+                'key': list(keywords),
                 'properties': properties,
                 'sentences': [],
                 'speaker': extract_roles(passage_data),
@@ -363,7 +369,7 @@ def parse_file(parsed_json, file_name, request_id):
                         'type': 'Text',
                         'structure': f'{section_number_}.{passage_number}.{i}',
                         'text': sentence,
-                        'key': remove_special_characters_from_list(keywords),
+                        'key': list(keywords),
                         'properties': properties
                     })
         section_number = 0
