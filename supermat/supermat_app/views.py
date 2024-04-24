@@ -24,17 +24,30 @@ class UploadParse(BaseView):
             # Path to the PDF file
             start = datetime.now()
             file_path = request.FILES.get('file_path')
+            DATA_PATH = os.path.abspath(os.path.join(os.path.dirname(__name__)))
+            if not os.path.exists(DATA_PATH):
+                os.makedirs(DATA_PATH, exist_ok=True)
+            temporary_file_location = os.path.join(DATA_PATH)
+            dataframe_location = str(temporary_file_location)+"/" + str(file_path.name)
+
             request_id = str(uuid.uuid4().hex)
             is_original = True
             if not is_pdf(file_path):
                 is_original = False
                 file_path = convert_file_to_pdf(file_path)
-            result = adobe_pdf_parser(file_path, request_id, is_original)
+            
+            result = adobe_pdf_parser(file_path, request_id, dataframe_location, is_original)
             end = datetime.now()
             print("Execution Time: "+ str(end-start))
+            output_file = 'response.json'
+            json_data = json.dumps(result, indent=4)
+
+            with open(output_file, 'w') as json_file:
+                json_file.write(json_data)
             # Generate the JSON structure
             self.response['res_data']['results'] = result
             self.response['res_data']['request_id'] = {f"{request_id}": f"{file_path}"}
+            self.response['res_data']['response_file'] = {'response_json':output_file}
             return JsonResponse(data=self.response, safe=False, status=200)
         except Exception as e:
             self.response['res_data'] = {}

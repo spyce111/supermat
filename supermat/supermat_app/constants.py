@@ -16,8 +16,8 @@ class SupermatConstants:
     HUGGING_FACE_MODEL_NAME = "ml6team/keyphrase-extraction-distilbert-inspec"
     SPEAKER_REGEX = "(Operator|Speaker|Moderator|Guest Speaker):"
     SPLIT_SENTENCE_REGEX = "(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s"
-    ADOBE_CLIENT_ID = "d16b66b7d5844c9c80f81a3a5c0e7aad"
-    ADOBE_CLIENT_SECRET = "p8e-DF136Wyl_9kWCfzwMsQKJ8cL3g7Whed1"
+    ADOBE_CLIENT_ID = ""
+    ADOBE_CLIENT_SECRET = ""
     ERR_STRING_EXTRACT_ROLES = "Error while extracting roles"
     ERR_STRING_EXTRACT_TIMESTAMP = "Error while extracting Timestamp"
     ERR_STRING_HUGGING_FACE_EXTRACT = 'Error while extracting the key words: Hugging face extract'

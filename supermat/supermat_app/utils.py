@@ -11,7 +11,8 @@ import uuid
 import traceback
 import string
 import difflib
-import os
+import base64
+import io
 # import numpy as np
 # from transformers.pipelines import AggregationStrategy
 from adobe.pdfservices.operation.auth.credentials import Credentials
@@ -29,15 +30,13 @@ from nltk.tag import pos_tag
 #     AutoModelForTokenClassification,
 #     AutoTokenizer,
 # )
-from pptx import Presentation
-from docx2pdf import convert
-from pptx import Presentation
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Image
 import os
-import tempfile
 from PIL import Image as PILImage
+from pdf2image import convert_from_path
+from spire.presentation import *
+from spire.presentation.common import *
+from spire.xls import *
+from spire.xls.common import *
 nlp = spacy.load("en_core_web_sm")
 
 class CustomLogger:
@@ -79,83 +78,79 @@ def log_create():
         raise Exception(SupermatConstants.ERR_STR_LOG_CREATE)
 
 def convert_file_to_pdf(file_path):
-    conversion_map = {
-        '.pptx': convert_pptx_to_pdf,
-        '.ppt': convert_pptx_to_pdf,
-        '.doc': convert_docx_to_pdf,
-        '.docx': convert_docx_to_pdf,
-        '.odt': convert_docx_to_pdf  # Assuming the same function for odt as docx
-    }
-    
-    _, file_extension = os.path.splitext(file_path.name)
-    
-    if file_extension in conversion_map:
-        return conversion_map[file_extension](file_path)
-    else:
-        raise Exception('Unsupported file format')
+    try:
+        conversion_map = {
+            '.pptx': convert_pptx_to_pdf,
+            '.ppt': convert_pptx_to_pdf,
+            '.doc': convert_docx_to_pdf,
+            '.docx': convert_docx_to_pdf,
+            '.odt': convert_docx_to_pdf  # Assuming the same function for odt as docx
+        }
+        
+        _, file_extension = os.path.splitext(file_path.name)
+        
+        if file_extension in conversion_map:
+            return conversion_map[file_extension](file_path)
+        else:
+            raise Exception('Unsupported file format')
+    except Exception as e:
+        raise Exception(str(e))
 
 def convert_docx_to_pdf(file_path):
     try:
-        convert(file_path)
-        return True
+        document = Document()
+        document.LoadFromFile(file_path)
+        parameter = ToPdfParameterList()
+        # parameter.DisableLink = True
+        # parameter.IsEmbeddedAllFonts = True
+        temporary_location = os.path.abspath(os.path.join(os.path.dirname(__name__), 'temporary_files'))
+        output_file_path = os.path.join(temporary_location, 'new_' + os.path.basename(file_path).replace('.docx', '.pdf'))
+        document.SaveToFile(output_file_path, parameter)
+        document.Close()
+        return True, output_file_path
     except Exception as e:
-        return False
+        print(str(e))
+        raise Exception(str(e))
+
+def convert_pptx_to_pdf(file_path):
+    try:
+        # Create an object of Presentation class
+        presentation = Presentation()
+
+        # Load a PPT or PPTX file
+        presentation.LoadFromFile(file_path)
+        temporary_location = os.path.abspath(os.path.join(os.path.dirname(__name__), 'temporary_files'))
+        output_file_path = os.path.join(temporary_location, 'new_' + os.path.basename(file_path).replace('.docx', '.pdf'))
+        # Convert the presentation file to PDF and save it
+        presentation.SaveToFile(output_file_path, FileFormat.PDF)
+        presentation.Dispose()
+        return True, output_file_path
+    except Exception as e:
+        print(str(e))
+        raise Exception(str(e))
 
 def resize_image(image_path, max_width=500):
-    with PILImage.open(image_path) as img:
-        ratio = max_width / float(img.size[0])
-        height = int(float(img.size[1]) * ratio)
-        resized_img = img.resize((max_width, height))
-        resized_img.save(image_path)
-
-def convert_pptx_to_pdf(uploaded_file):
     try:
-        temp_path = os.path.abspath(os.path.join(os.path.dirname(__name__)))
-        pdf_file_path = os.path.join(str(temp_path), str(uploaded_file.name.split('.')[0]) + ".pdf")
-        # Load the presentation
-        prs = Presentation(uploaded_file.file)
-
-        # Create a PDF
-        pdf = SimpleDocTemplate(
-            pdf_file_path,
-            pagesize=letter
-        )
-
-        # Set the style
-        styles = getSampleStyleSheet()
-        styleN = styles['BodyText']
-
-        # Collect slides' content
-        content = []
-        for slide_number, slide in enumerate(prs.slides):
-            slide_content = []
-            for shape in slide.shapes:
-                if shape.shape_type == 13:  # Check if shape is an image
-                    image = shape.image
-                    image_bytes = image.blob
-                    image_path = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-                    image_path.write(image_bytes)
-                    image_path.close()
-
-                    # Resize the image
-                    resize_image(image_path.name)
-
-                    content.append(Image(image_path.name, width=400))  # Adjust width as needed
-                elif hasattr(shape, "text"):
-                    slide_content.append(shape.text)
-
-            if slide_content:
-                content.append(Paragraph("\n".join(slide_content), styleN))
-
-        # Build the PDF
-        pdf.build(content)
-        return pdf_file_path
+        with PILImage.open(image_path) as img:
+            ratio = max_width / float(img.size[0])
+            height = int(float(img.size[1]) * ratio)
+            resized_img = img.resize((max_width, height))
+            resized_img.save(image_path)
     except Exception as e:
-        trace_back = traceback.format_exc()
-        ERROR_LOG.error(f"Error converting {uploaded_file} to PDF: {str(e)} Trace Back: {str(trace_back)}")
-        raise Exception(SupermatConstants.ERR_STRING_EXTRACT_ROLES)
+        raise Exception(str(e))
 
+def clean_unicode_string(sentence):
+    try:
 
+        # Replace unicode characters with spaces
+        cleaned_string = sentence.replace("\ue020", " ")
+        
+        # Remove any extra spaces
+        cleaned_string = " ".join(cleaned_string.split())
+        
+        return cleaned_string
+    except Exception as e:
+        raise Exception(str(e))
 
 def extract_roles(sentence):
     try:
@@ -192,7 +187,6 @@ def extract_timestamp(text):
         ERROR_LOG.error("Error while Extracing the timestamp" + str(e)+". Trace Back: "+ str(trace_back))
         raise Exception(SupermatConstants.ERR_STRING_EXTRACT_TIMESTAMP)
 
-
 def extract_keywords_spacy(sentence):
     try:
         SUCCESS_LOG, ERROR_LOG = log_create()
@@ -203,7 +197,7 @@ def extract_keywords_spacy(sentence):
                                                     or (token.is_digit)) \
                                                     and token.pos_ in \
                                                     ['NUM', 'NOUN', 'VERB', 'ADV', 'ADJ']]
-        SUCCESS_LOG.info("Spacy Extraction Successful")
+        # SUCCESS_LOG.info("Spacy Extraction Successful")
         return list(set(keywords))
     except Exception as e:
         trace_back = traceback.format_exc()
@@ -222,7 +216,7 @@ def extract_meaningful_words(sentence):
                     if ((tag.startswith(('NN', 'VB', 'JJ', 'RB')) and\
                           len(word) > 4) or (tag == 'CD')) and \
                             word.lower() != 'i']
-        SUCCESS_LOG.info("Meaningfull words Extraction Successful")
+        # SUCCESS_LOG.info("Meaningfull words Extraction Successful")
         return list(set(keywords))
     except Exception as e:
         trace_back = traceback.format_exc()
@@ -231,7 +225,7 @@ def extract_meaningful_words(sentence):
 
 def extract_keywords_nltk(sentence):
     try:
-        SUCCESS_LOG, ERROR_LOG = log_create()
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         # Tokenize the sentence
         tokens = word_tokenize(sentence.lower())
         # Remove stopwords and punctuation
@@ -244,8 +238,8 @@ def extract_keywords_nltk(sentence):
         return tokens
     except Exception as e:
         trace_back = traceback.format_exc()
-        ERROR_LOG.error("Error while Extracing the keywords using NLTK: "+str(e)+". Trace Back: "+ str(trace_back))
-        raise Exception(SupermatConstants.ERR_STRING_NLTK_EXTRACT)
+        # ERROR_LOG.error("Error while Extracing the keywords using NLTK: "+str(e)+". Trace Back: "+ str(trace_back))
+        raise Exception("Error while Extracing the keywords using NLTK: "+str(e)+". Trace Back: "+ str(trace_back))
 
 # Define keyphrase extraction pipeline
 # class KeyphraseExtractionPipeline(TokenClassificationPipeline):
@@ -326,7 +320,6 @@ def remove_special_characters_from_list(lst):
         ERROR_LOG.error(f"Error while removing the special characters from the keywords: {str(e)}. Trace Back: {str(trace_back)}")
         raise Exception(SupermatConstants.ERR_STR_REMOVE_SPECIAL_CHAR)
 
-
 def is_pdf(file_path):
     try:
         SUCCESS_LOG, ERROR_LOG = log_create()
@@ -339,7 +332,56 @@ def is_pdf(file_path):
         ERROR_LOG.error("Error while checking the type: "+ str(e)+ ". Trace Back: "+str(trace_back))
         raise Exception(SupermatConstants.ERR_STRING_PDF_CHECK)
 
-def parse_file(parsed_json, file_name, request_id):
+def get_image_from_pdf(pdf_path, page_number, bounds):
+    """
+    Extract an image from a PDF.
+    
+    Args:
+    - pdf_path (str): Path to the local PDF file.
+    - page_number (int): Page number from which to extract the image (0-based index).
+    - bounds (dict): Dictionary containing 'left', 'top', 'width', and 'height' of the bounding box.
+    
+    Returns:
+    - PIL.Image.Image: Extracted and cropped image.
+    """
+    try:
+        # Convert PDF page to image
+        # import pdb;pdb.set_trace()
+        images = convert_from_path(pdf_path, first_page=page_number + 1, last_page=page_number + 1)
+        image = images[0]
+
+        # Crop the image using bounds
+        cropped_img = image.crop((bounds['left'], bounds['top'], bounds['left'] + bounds['width'], bounds['top'] + bounds['height']))
+        
+        return cropped_img
+    except Exception as e:
+        raise Exception(str(e))
+
+def image_to_base64(image):
+    """
+    Convert the given image to a Base64 encoded string.
+    
+    Args:
+    - image (PIL.Image.Image): Image to be converted.
+    
+    Returns:
+    - str: Base64 encoded string of the image.
+    """
+    try:
+        # Convert image to bytes
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='PNG')
+        img_byte_arr = img_byte_arr.getvalue()
+        
+        # Encode bytes to Base64
+        base64_str = base64.b64encode(img_byte_arr).decode('utf-8')
+        
+        return base64_str
+    except Exception as e:
+        raise Exception(str(e))
+
+
+def parse_file(parsed_json, file_name, request_id, pdf_path):
     try:
         SUCCESS_LOG, ERROR_LOG = log_create()
         output = []
@@ -347,18 +389,19 @@ def parse_file(parsed_json, file_name, request_id):
         def add_prefix_to_sentences(section_number_, passage_data, element_):
             keys_to_check = ['Bounds', 'Font', 'HasClip', 'Lang', 'ObjectID', 'Page', 'Path', 'TextSize', 'attributes']
             properties = {key: element_.get(key) for key in keys_to_check if key in element_}
-            keywords = set(extract_keywords_spacy(passage_data)).union(extract_meaningful_words(passage_data))
+            keywords = set(extract_keywords_spacy(clean_unicode_string(passage_data))).union(extract_meaningful_words(clean_unicode_string(passage_data)))
+            # keywords = set(extract_keywords_spacy(passage_data)).union(extract_meaningful_words(passage_data))
             output.append({
                 'type': 'Text',
                 'structure': f'{section_number_}.{passage_number}.0',
-                'text': passage_data,
+                'text': clean_unicode_string(passage_data),
                 'key': list(keywords),
                 'properties': properties,
                 'sentences': [],
                 'speaker': extract_roles(passage_data),
                 'document': file_name,
                 'timestamp': extract_timestamp(passage_data),
-                'annotations': extract_annotations(passage_data)
+                'annotations': extract_annotations(clean_unicode_string(passage_data))
             })
             sentences = re.split(rf'{SupermatConstants.SPLIT_SENTENCE_REGEX}', passage_data)
             sentences = [s.strip() for s in sentences if s]
@@ -368,7 +411,7 @@ def parse_file(parsed_json, file_name, request_id):
                     output[-1]['sentences'].append({
                         'type': 'Text',
                         'structure': f'{section_number_}.{passage_number}.{i}',
-                        'text': sentence,
+                        'text': clean_unicode_string(sentence),
                         'key': list(keywords),
                         'properties': properties
                     })
@@ -390,10 +433,20 @@ def parse_file(parsed_json, file_name, request_id):
                 add_prefix_to_sentences(section_number, text, element)
             elif 'Figure' in element.get('Path',''):
                 passage_number += 1
+                bound_img = element.get('Bounds','')
+                if bound_img:
+                    bounds = {
+                                'left': bound_img[0],
+                                'top': bound_img[1],
+                                'width': bound_img[2],
+                                'height': bound_img[3]
+                            }
+                    figure = get_image_from_pdf(pdf_path, element.get('Page',0), bounds)
                 output.append({
                     'type': 'Image',
                     'structure': f'{section_number}.{passage_number}.0',
                     'figure': f'FIGURE {figure_count}',
+                    'figure-object': image_to_base64(figure),
                     'Bounds': element.get('Bounds',''),
                     'ObjectId': element.get('ObjectID',''),
                     'Page': element.get('Page',''),
@@ -426,7 +479,7 @@ def parse_file(parsed_json, file_name, request_id):
         ERROR_LOG.error(f"Error while parsing the file: parse_file {str(e)}. Traceback: {str(trace_back)}")
         raise Exception(SupermatConstants.ERR_STING_PDF_PARSER)
 
-def adobe_pdf_parser(upload_file, request_id, is_original=False):
+def adobe_pdf_parser(upload_file, request_id, dataframe_location, is_original=False):
     try:
         SUCCESS_LOG, ERROR_LOG = log_create()
         if is_original:
@@ -469,7 +522,7 @@ def adobe_pdf_parser(upload_file, request_id, is_original=False):
         
         json_data = json.loads(file_content)
 
-        parsed_json = parse_file(json_data, file_name, request_id)
+        parsed_json = parse_file(json_data, file_name, request_id, dataframe_location)
 
         if not is_original:
             try:
