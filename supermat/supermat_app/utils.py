@@ -37,6 +37,11 @@ from spire.presentation import *
 from spire.presentation.common import *
 from spire.xls import *
 from spire.xls.common import *
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from unidecode import unidecode
 nlp = spacy.load("en_core_web_sm")
 
 class CustomLogger:
@@ -140,17 +145,70 @@ def resize_image(image_path, max_width=500):
         raise Exception(str(e))
 
 def clean_unicode_string(sentence):
-    try:
+    return unidecode(sentence)
 
-        # Replace unicode characters with spaces
-        cleaned_string = sentence.replace("\ue020", " ")
+# Function to read JSON file and return content as a list of strings
+def read_json_file(json_file):
+    try:
+        with open(json_file, 'r') as file:
+            data = json.load(file)
+        return [json.dumps(entry, indent=4) for entry in data]
+    except FileNotFoundError:
+        raise Exception(f"Error: File '{json_file}' not found.")
+    except json.JSONDecodeError:
+        raise Exception(f"Error: Failed to decode JSON from '{json_file}'.")
+
+# Function to create PDF from list of strings
+def create_pdf_from_list(pdf_file, lines):
+    try:
+        doc = SimpleDocTemplate(pdf_file, pagesize=letter)
+        styles = getSampleStyleSheet()
         
-        # Remove any extra spaces
-        cleaned_string = " ".join(cleaned_string.split())
+        # Define custom style for the PDF content
+        custom_style = ParagraphStyle(
+            'custom_style',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=10,
+            textColor=colors.black,
+            spaceAfter=12,
+        )
         
-        return cleaned_string
+        story = []
+        
+        for line in lines:
+            story.append(Paragraph(line, custom_style))
+            story.append(Spacer(1, 12))  # Add some space between paragraphs
+        
+        doc.build(story)
+        print(f"PDF created successfully: {pdf_file}")
+    except Exception as e:
+        raise Exception(f"Error: An error occurred while creating the PDF: {e}")
+
+def write_json_file(result,output_file):
+    try:
+        json_data = json.dumps(result, indent=4)
+        with open(output_file, 'w') as json_file:
+            json_file.write(json_data)
     except Exception as e:
         raise Exception(str(e))
+
+
+
+# def clean_unicode_string(sentence):
+#     try:
+
+#         # Replace unicode characters with spaces
+#         clean_string = sentence.replace("\ue020", " ")
+#         clean_str = clean_string.replace("\u2019","")
+#         cleaned_string = clean_str.replace("\u201","")
+        
+#         # Remove any extra spaces
+#         cleaned_string = " ".join(cleaned_string.split())
+        
+#         return cleaned_string
+#     except Exception as e:
+#         raise Exception(str(e))
 
 def extract_roles(sentence):
     try:
