@@ -1,6 +1,5 @@
 import re
 import json
-import logging
 from io import BytesIO
 import zipfile
 import spacy
@@ -32,16 +31,17 @@ from nltk.tag import pos_tag
 # )
 import os
 from PIL import Image as PILImage
-from pdf2image import convert_from_path
 from spire.presentation import *
 from spire.presentation.common import *
 from spire.xls import *
 from spire.xls.common import *
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from unidecode import unidecode
+import pdfplumber
+from bs4 import BeautifulSoup
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 nlp = spacy.load("en_core_web_sm")
 
 class CustomLogger:
@@ -158,12 +158,21 @@ def read_json_file(json_file):
     except json.JSONDecodeError:
         raise Exception(f"Error: Failed to decode JSON from '{json_file}'.")
 
+# Function to close unclosed HTML tags
+def close_unclosed_tags(html_content):
+    try:
+        soup = BeautifulSoup(html_content, 'html.parser')
+        return str(soup)
+    except:
+        return html_content
+
+
 # Function to create PDF from list of strings
 def create_pdf_from_list(pdf_file, lines):
     try:
         doc = SimpleDocTemplate(pdf_file, pagesize=letter)
         styles = getSampleStyleSheet()
-        
+
         # Define custom style for the PDF content
         custom_style = ParagraphStyle(
             'custom_style',
@@ -173,17 +182,57 @@ def create_pdf_from_list(pdf_file, lines):
             textColor=colors.black,
             spaceAfter=12,
         )
-        
+
         story = []
-        
+
         for line in lines:
-            story.append(Paragraph(line, custom_style))
+            # Close unclosed HTML tags
+            line = close_unclosed_tags(line)
+
+            try:
+                # Try to create a Paragraph with the line
+                story.append(Paragraph(line, custom_style))
+            except ValueError as e:
+                # If ValueError occurs, log the error and add a modified version of the line
+                print(f"Error processing line: {e}. Trying to fix the line.")
+
+                # Add a closing </para> tag to try to fix the issue
+                fixed_line = f"{line}</para>"
+                story.append(Paragraph(fixed_line, custom_style))
+
             story.append(Spacer(1, 12))  # Add some space between paragraphs
-        
+
         doc.build(story)
         print(f"PDF created successfully: {pdf_file}")
     except Exception as e:
         raise Exception(f"Error: An error occurred while creating the PDF: {e}")
+
+# Function to create PDF from list of strings
+# def create_pdf_from_list(pdf_file, lines):
+#     try:
+#         doc = SimpleDocTemplate(pdf_file, pagesize=letter)
+#         styles = getSampleStyleSheet()
+#
+#         # Define custom style for the PDF content
+#         custom_style = ParagraphStyle(
+#             'custom_style',
+#             parent=styles['Normal'],
+#             fontName='Helvetica',
+#             fontSize=10,
+#             textColor=colors.black,
+#             spaceAfter=12,
+#         )
+#
+#         story = []
+#
+#         for line in lines:
+#             story.append(Paragraph(line, custom_style))
+#             story.append(Spacer(1, 12))  # Add some space between paragraphs
+#
+#         doc.build(story)
+#         print(f"PDF created successfully: {pdf_file}")
+#     except Exception as e:
+#         raise Exception(f"Error: An error occurred while creating the PDF: {e}")
 
 def write_json_file(result,output_file):
     try:
@@ -390,7 +439,7 @@ def is_pdf(file_path):
         ERROR_LOG.error("Error while checking the type: "+ str(e)+ ". Trace Back: "+str(trace_back))
         raise Exception(SupermatConstants.ERR_STRING_PDF_CHECK)
 
-def get_image_from_pdf(pdf_path, page_number, bounds):
+def get_image_from_pdf(pdf_path, page_number, bbox):
     """
     Extract an image from a PDF.
     
@@ -404,14 +453,20 @@ def get_image_from_pdf(pdf_path, page_number, bounds):
     """
     try:
         # Convert PDF page to image
-        # import pdb;pdb.set_trace()
-        images = convert_from_path(pdf_path, first_page=page_number + 1, last_page=page_number + 1)
-        image = images[0]
+        pdf_stream = io.BytesIO(pdf_path)
+        pdf_obj = pdfplumber.open(pdf_stream)
+        page = pdf_obj.pages[page_number]
+        images_in_page = page.images
+        for image in images_in_page:
+            if int(image['x0']) == int(bbox[0]) and int(image['y0']) == int(bbox[1]) and int(image['x1']) == int(
+                    bbox[2]) and int(image['y1']) == int(bbox[3]):
+                page_height = page.height
+                # image = images_in_page[0]  # assuming images_in_page has at least one element, only for understanding purpose.
+                image_bbox = (image['x0'], page_height - image['y1'], image['x1'], page_height - image['y0'])
+                cropped_page = page.crop(image_bbox)
+                image_obj = cropped_page.to_image(resolution=400)
+                return image_obj
 
-        # Crop the image using bounds
-        cropped_img = image.crop((bounds['left'], bounds['top'], bounds['left'] + bounds['width'], bounds['top'] + bounds['height']))
-        
-        return cropped_img
     except Exception as e:
         raise Exception(str(e))
 
@@ -491,20 +546,15 @@ def parse_file(parsed_json, file_name, request_id, pdf_path):
                 add_prefix_to_sentences(section_number, text, element)
             elif 'Figure' in element.get('Path',''):
                 passage_number += 1
-                bound_img = element.get('Bounds','')
+                bound_img = element['attributes']['BBox']
                 if bound_img:
-                    bounds = {
-                                'left': bound_img[0],
-                                'top': bound_img[1],
-                                'width': bound_img[2],
-                                'height': bound_img[3]
-                            }
-                    figure = get_image_from_pdf(pdf_path, element.get('Page',0), bounds)
+
+                    figure = get_image_from_pdf(pdf_path, element.get('Page',0), bound_img)
                 output.append({
                     'type': 'Image',
                     'structure': f'{section_number}.{passage_number}.0',
                     'figure': f'FIGURE {figure_count}',
-                    'figure-object': image_to_base64(figure),
+                    'figure-object': image_to_base64(figure) if figure else None,
                     'Bounds': element.get('Bounds',''),
                     'ObjectId': element.get('ObjectID',''),
                     'Page': element.get('Page',''),
@@ -537,7 +587,7 @@ def parse_file(parsed_json, file_name, request_id, pdf_path):
         ERROR_LOG.error(f"Error while parsing the file: parse_file {str(e)}. Traceback: {str(trace_back)}")
         raise Exception(SupermatConstants.ERR_STING_PDF_PARSER)
 
-def adobe_pdf_parser(upload_file, request_id, dataframe_location, is_original=False):
+def adobe_pdf_parser(upload_file, request_id, is_original=False):
     try:
         SUCCESS_LOG, ERROR_LOG = log_create()
         if is_original:
@@ -580,7 +630,7 @@ def adobe_pdf_parser(upload_file, request_id, dataframe_location, is_original=Fa
         
         json_data = json.loads(file_content)
 
-        parsed_json = parse_file(json_data, file_name, request_id, dataframe_location)
+        parsed_json = parse_file(json_data, file_name, request_id, uploaded_file_data)
 
         if not is_original:
             try:
