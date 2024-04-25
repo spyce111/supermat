@@ -28,14 +28,12 @@ class UploadParse(BaseView):
             if not os.path.exists(DATA_PATH):
                 os.makedirs(DATA_PATH, exist_ok=True)
             temporary_file_location = os.path.join(DATA_PATH)
-            dataframe_location = str(temporary_file_location)+"/" + str(file_path.name)
-
             request_id = str(uuid.uuid4().hex)
             is_original = True
             if not is_pdf(file_path):
                 is_original = False
                 file_path = convert_file_to_pdf(file_path)
-            result = adobe_pdf_parser(file_path, request_id, dataframe_location, is_original)
+            result = adobe_pdf_parser(file_path, request_id, is_original)
             end = datetime.now()
             print("Execution Time: "+ str(end-start))
             output_file = temporary_file_location+'/'+request_id+'_'+'response.json'
