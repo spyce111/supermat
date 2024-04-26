@@ -144,8 +144,44 @@ def resize_image(image_path, max_width=500):
     except Exception as e:
         raise Exception(str(e))
 
+# def clean_unicode_string(sentence):
+#     if not has_different_unicode(sentence):
+#         return sentence
+#     return unidecode(sentence)
+
+def has_different_unicode(sentence):
+    # Create a set to store unique Unicode characters
+    unique_chars = set()
+
+    # Iterate over each character in the sentence
+    for char in sentence:
+        unique_chars.add(char)
+
+    # Compare the length of the set to the length of the sentence
+    if len(unique_chars) == len(sentence):
+        return False  # All characters are unique
+    else:
+        return True   # Sentence contains different Unicode characters
+
 def clean_unicode_string(sentence):
-    return unidecode(sentence)
+    if not has_different_unicode(sentence):
+        return sentence
+    
+    # Replace the problematic Unicode characters with spaces
+    cleaned_sentence = ""
+    for char in sentence:
+        if char == '\u2022\ue020' or char == '\ue020' \
+            or char == '\u2022' or char == '\u2019' \
+            or char == '\u201c' or char == '\u2013' \
+            or char == '\u201d' or '\\u' in repr(char):
+            # print("Before: "+char)
+            cleaned_sentence += " "
+            # print("After: "+cleaned_sentence)
+        else:
+            cleaned_sentence += char
+    
+    # print(cleaned_sentence)
+    return cleaned_sentence
 
 # Function to read JSON file and return content as a list of strings
 def read_json_file(json_file):
@@ -461,8 +497,9 @@ def get_image_from_pdf(pdf_path, page_number, bbox):
             if int(image['x0']) == int(bbox[0]) and int(image['y0']) == int(bbox[1]) and int(image['x1']) == int(
                     bbox[2]) and int(image['y1']) == int(bbox[3]):
                 page_height = page.height
+                x0, x1, y0, y1 = [abs(coord) for coord in (image.get('x0',0), image.get('x1',0), image.get('y0',0), image.get('y1',0))]
                 # image = images_in_page[0]  # assuming images_in_page has at least one element, only for understanding purpose.
-                image_bbox = (image['x0'], page_height - image['y1'], image['x1'], page_height - image['y0'])
+                image_bbox = (x0, min(page_height,abs(page_height - y1)), x1, min(page_height,abs(page_height - y0)))
                 cropped_page = page.crop(image_bbox)
                 image_obj = cropped_page.to_image(resolution=400)
                 return image_obj
@@ -546,9 +583,11 @@ def parse_file(parsed_json, file_name, request_id, pdf_path):
                 add_prefix_to_sentences(section_number, text, element)
             elif 'Figure' in element.get('Path',''):
                 passage_number += 1
-                bound_img = element['attributes']['BBox']
+                bound_img = None
+                image_bound = element.get('attributes', {})
+                if image_bound:
+                    bound_img = image_bound.get('BBox', None)
                 if bound_img:
-
                     figure = get_image_from_pdf(pdf_path, element.get('Page',0), bound_img)
                 output.append({
                     'type': 'Image',
