@@ -6,6 +6,7 @@ SUCCESS_NAME = 'Success_Log'
 SUCCESS_FILE = '/rest/logs/supermat.log'
 ERROR_LOG = logging.getLogger(ERROR_NAME)
 SUCCESS_LOG = logging.getLogger(SUCCESS_NAME)
+DESTINATION_DIRECTORY = '/rest/supermat/image_location'
 
 class SupermatConstants:
     

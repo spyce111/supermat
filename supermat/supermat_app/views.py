@@ -36,13 +36,16 @@ class UploadParse(BaseView):
             result = adobe_pdf_parser(file_path, request_id, is_original)
             end = datetime.now()
             print("Execution Time: "+ str(end-start))
-            file_base_name, file_extension = os.path.splitext(file_path.name)
+            file_base_name, file_extension = os.path.splitext(file_path.name )
             output_file = temporary_file_location+'/'+str(file_base_name)+request_id+'_'+'response.json'
             write_json_file(result,output_file)
             lines = read_json_file(output_file)
             pdf_file = temporary_file_location+'/'+str(file_base_name)+request_id+'_'+'response.pdf'
             # Create PDF from list of strings
+            pdf_start = datetime.now()
             create_pdf_from_list(pdf_file, lines)
+            pdf_end = datetime.now()
+            print(f"PDF creation time: {str((pdf_end-pdf_start))}")
             self.response['res_data']['results'] = result
             self.response['res_data']['request_id'] = {f"{request_id}": f"{file_path}"}
             self.response['res_data']['response_file'] = {'response_json':output_file,"response_pdf":pdf_file}
