@@ -521,7 +521,7 @@ def parse_file(parsed_json, file_name, request_id, pdf_path,image_json, image_co
         for element in tqdm(parsed_json.get('elements',''), desc="Processing"):
             path_type = element.get('Path','')[11]
             
-            if ('filePaths' in element.keys()):
+            if 'filePaths' in element.keys():
                 passage_number += 1
                 figure = None
                 print('Total Images using Figure directory: ', str(len(image_json)))
@@ -690,11 +690,11 @@ def adobe_pdf_parser(upload_file, request_id, is_original=False):
         if is_original:
             # Read the uploaded file
             uploaded_file_data = upload_file.file.read()
-            file_name = upload_file.name
+            file_name_ = upload_file.name
         else:
             with open(upload_file, 'rb') as file:
                 uploaded_file_data = file.read()
-                file_name = file.name
+                file_name_ = file.name
         
         # Setup Adobe credentials
         credentials = Credentials.service_principal_credentials_builder() \
@@ -740,7 +740,7 @@ def adobe_pdf_parser(upload_file, request_id, is_original=False):
         
         json_data = json.loads(file_content)
 
-        parsed_json = parse_file(json_data, file_name, request_id, uploaded_file_data, image_json, image_count)
+        parsed_json = parse_file(json_data, file_name_, request_id, uploaded_file_data, image_json, image_count)
         # pdf_json_text = parse_pdf_file(json_data, file_name, request_id, uploaded_file_data)
         if not is_original:
             try:
