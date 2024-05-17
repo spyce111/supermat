@@ -1,0 +1,15 @@
+chroma_env/*
+temporary_files/*
+*.pdf
+*.json
+my_chroma_data/*
+chroma/*
+pdf_location/*
+__pycache__/*
+*.pyc
+*/*/__pycache__/*
+*/__pycache__/*
+supermat/supermat_app/__pycache__/
+*.zip
+*.gz
+venv_sup/*

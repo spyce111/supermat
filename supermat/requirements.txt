@@ -17,4 +17,4 @@ en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_
 unicode==2.9
 Unidecode==1.3.8
 beautifulsoup4==4.12.3
-
+rake-nltk==1.0.6

@@ -22,6 +22,7 @@ class UploadParse(BaseView):
         try:
             SUCCESS_LOG, ERROR_LOG = log_create()
             # Path to the PDF file
+            # import pdb;pdb.set_trace()
             start = datetime.now()
             file_path = request.FILES.get('file_path')
             DATA_PATH = os.path.abspath(os.path.join(os.path.dirname(__name__)))
@@ -46,9 +47,11 @@ class UploadParse(BaseView):
             create_pdf_from_list(pdf_file, lines)
             pdf_end = datetime.now()
             print(f"PDF creation time: {str((pdf_end-pdf_start))}")
+            collection_name, result = insert_into_chroma(result, request_id)
             self.response['res_data']['results'] = result
             self.response['res_data']['request_id'] = {f"{request_id}": f"{file_path}"}
             self.response['res_data']['response_file'] = {'response_json':output_file,"response_pdf":pdf_file}
+            self.response['res_data']['collection_id'] = collection_name
             return JsonResponse(data=self.response, safe=False, status=200)
         except Exception as e:
             self.response['res_data'] = {}

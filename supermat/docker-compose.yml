@@ -1,7 +1,40 @@
-version: '3'
+# version: '3'
 
+# services:
+#   web:
+#     build: .
+#     ports:
+#       - "8000:8000"
+version: "3.8"
 services:
-  web:
-    build: .
+  application:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    image: supermat
+    container_name: supermat
+    volumes:
+      - ./:/rest/supermat
+    networks:
+      - net
     ports:
       - "8000:8000"
+  chroma:
+    image: ghcr.io/chroma-core/chroma:latest
+    container_name: supermat_chroma
+    volumes:
+      - index_data:/chroma/.chroma/index
+    ports:
+      - "8001:8001"
+    networks:
+      - net
+
+volumes:
+  index_data:
+    driver: local
+  backups:
+    driver: local
+
+networks:
+  net:
+    driver: bridge

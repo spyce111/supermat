@@ -40,6 +40,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from .supermat_chroma import ChromaDBConnection
 nlp = spacy.load("en_core_web_sm")
 import unicodedata
 
@@ -253,7 +254,6 @@ def clean_unicode_string(sentence):
 
     return cleaned_sentence
 
-
 # Function to read JSON file and return content as a list of strings
 def read_json_file(json_file):
     try:
@@ -351,21 +351,80 @@ def extract_keywords_spacy(sentence):
         ERROR_LOG.error("Error while Extracing the keywords using Spacy: "+str(e)+". Trace Back: "+ str(trace_back))
         raise Exception(SupermatConstants.ERR_STRING_SPACY_EXTRACT)
 
+# def extract_meaningful_words(sentence):
+#     try:
+#         SUCCESS_LOG, ERROR_LOG = log_create()
+#         # Tokenize the sentence
+#         tokens = word_tokenize(sentence)
+#         # Perform POS tagging
+#         tagged_tokens = pos_tag(tokens)
+#         # Extract words with more than 4 characters, numerics, nouns, verbs, adverbs, and adjectives excluding pronouns
+#         keywords = [word for word, tag in tagged_tokens \
+#                     if ((tag.startswith(('NN', 'VB', 'JJ', 'RB')) and\
+#                           len(word) > 4) or (tag == 'CD')) and \
+#                             word.lower() != 'i']
+#         # SUCCESS_LOG.info("Meaningfull words Extraction Successful")
+#         return list(set(keywords))
+#     except Exception as e:
+#         trace_back = traceback.format_exc()
+#         ERROR_LOG.error("Error while Extracing the keywords using NLTK: "+str(e)+". Trace Back: "+ str(trace_back))
+#         raise Exception(SupermatConstants.ERR_STRING_NLTK_EXTRACT)
+
+def split_into_keywords(phrase):
+    # Split the phrase into individual words based on whitespace or punctuation
+    return re.findall(r'\b\w+\b', phrase)
+
 def extract_meaningful_words(sentence):
     try:
         SUCCESS_LOG, ERROR_LOG = log_create()
         # Tokenize the sentence
         tokens = word_tokenize(sentence)
+
         # Perform POS tagging
         tagged_tokens = pos_tag(tokens)
-        # Extract words with more than 4 characters, numerics, nouns, verbs, adverbs, and adjectives excluding pronouns
-        keywords = [word for word, tag in tagged_tokens \
-                    if ((tag.startswith(('NN', 'VB', 'JJ', 'RB')) and\
-                          len(word) > 4) or (tag == 'CD')) and \
-                            word.lower() != 'i']
-        # SUCCESS_LOG.info("Meaningfull words Extraction Successful")
-        return list(set(keywords))
+
+        # Define stopwords and punctuation
+        stop_words = set(stopwords.words('english'))
+        punctuation = {',', '.', '!', '?', ';', ':', '(', ')', '[', ']', '{', '}'}
+
+        # Define question-making words
+        question_words = {'what', 'when', 'where', 'which', 'who', 'whom', 'whose', 'why', 'how'}
+
+        # Define additional words to exclude (including conjunctions)
+        excluded_words = {'if', 'but', 'then', 'and', 'or',\
+                           'because', 'although', 'though',\
+                            'while', 'since', 'before', \
+                            'after', 'until', 'unless', \
+                            'either', 'neither'}
+
+        # Extract meaningful words
+        meaningful_keywords = []
+        seen_keywords = set()
+        for word, tag in tagged_tokens:
+            # Filter out stopwords, punctuation, short words, question-making words, conjunctions, and additional excluded words
+            if word.lower() not in stop_words \
+                    and word not in punctuation \
+                    and len(word) > 2 \
+                    and tag in ['NN', 'NNS', 'NNP', 'NNPS',\
+                                'VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ',\
+                                'JJ', 'JJR', 'JJS',\
+                                'RB', 'RBR', 'RBS']\
+                    and word.lower() not in question_words \
+                    and word.lower() not in excluded_words \
+                    and not word.startswith("'") \
+                    and not word.endswith("'"):
+
+                # Convert to lowercase
+                word_lower = word.lower()
+
+                # Check for uniqueness
+                if word_lower not in seen_keywords:
+                    meaningful_keywords.append(word_lower)
+                    seen_keywords.add(word_lower)
+
+        return meaningful_keywords
     except Exception as e:
+        # Handle exceptions gracefully
         trace_back = traceback.format_exc()
         ERROR_LOG.error("Error while Extracing the keywords using NLTK: "+str(e)+". Trace Back: "+ str(trace_back))
         raise Exception(SupermatConstants.ERR_STRING_NLTK_EXTRACT)
@@ -487,9 +546,10 @@ def parse_file(parsed_json, file_name, request_id, pdf_path,image_json, image_co
         def add_prefix_to_sentences(section_number_, passage_data, element_):
             keys_to_check = ['Bounds', 'Font', 'HasClip', 'Lang', 'ObjectID', 'Page', 'Path', 'TextSize', 'attributes']
             properties = {key: element_.get(key) for key in keys_to_check if key in element_}
-            keywords = set(extract_keywords_spacy(clean_unicode_string(passage_data))).union(extract_meaningful_words(clean_unicode_string(passage_data)))
-            # keywords = set(extract_keywords_spacy(passage_data)).union(extract_meaningful_words(passage_data))
             passage_data = clean_unicode_string(passage_data)
+            keywords = extract_meaningful_words(clean_unicode_string(passage_data))
+            #keywords = set(extract_keywords_spacy(clean_unicode_string(passage_data))).union(extract_meaningful_words(clean_unicode_string(passage_data)))
+            # keywords = set(extract_keywords_spacy(passage_data)).union(extract_meaningful_words(passage_data))
             output.append({
                 'type': 'Text',
                 'structure': f'{section_number_}.{passage_number}.0',
@@ -507,7 +567,8 @@ def parse_file(parsed_json, file_name, request_id, pdf_path,image_json, image_co
             if len(sentences) > 1:
                 for i, sentence in enumerate(sentences, start=1):
                     sentence = clean_unicode_string(sentence)
-                    keywords = set(extract_keywords_spacy(sentence)).union(extract_meaningful_words(sentence))
+                    keywords = extract_meaningful_words(clean_unicode_string(sentence))
+                    #keywords = set(extract_keywords_spacy(sentence)).union(extract_meaningful_words(sentence))
                     output[-1]['sentences'].append({
                         'type': 'Text',
                         'structure': f'{section_number_}.{passage_number}.{i}',
@@ -741,7 +802,6 @@ def adobe_pdf_parser(upload_file, request_id, is_original=False):
         json_data = json.loads(file_content)
 
         parsed_json = parse_file(json_data, file_name, request_id, uploaded_file_data, image_json, image_count)
-        # pdf_json_text = parse_pdf_file(json_data, file_name, request_id, uploaded_file_data)
         if not is_original:
             try:
                 if os.path.exists(file.name):
@@ -762,3 +822,33 @@ def adobe_pdf_parser(upload_file, request_id, is_original=False):
         trace_back = traceback.format_exc()
         ERROR_LOG.error(f"Error while parsing the pdf: adobe_pdf_parser {str(e)}. Traceback: {str(trace_back)}")
         raise Exception(SupermatConstants.ERR_STRING_ADOBE_PARSER)
+
+
+def insert_into_chroma(result, request_id):
+    try:
+        import pdb;pdb.set_trace()
+        SUCCESS_LOG, ERROR_LOG = log_create()
+        chroma_serv = ChromaDBConnection(SupermatConstants.CHROMA_DB_CONFIG)
+        json_list = [json.dumps(element) for element in result]
+        json_ids = [f"{request_id}_id{i}" for i in range(len(result))]
+        metadata = [{"document_id": request_id} for _ in range(len(result))]
+        data_list = {'ids': json_ids, 'documents': json_list, 'metadatas': metadata}
+        collection_name, result = chroma_serv.insert(collection_name="supermat_docs", data_list=data_list)
+        return collection_name, result
+    except Exception as e:
+        trace_back = traceback.format_exc()
+        ERROR_LOG.error(f"Error while loading data into chroma {str(e)}. Traceback: {str(trace_back)}")
+        raise Exception(SupermatConstants.ERR_STR_CHROMA_INSERT)
+
+def get_query_from_chroma(query, collection_id=None):
+    try:
+        SUCCESS_LOG, ERROR_LOG = log_create()
+        chroma_serv = ChromaDBConnection(SupermatConstants.CHROMA_DB_CONFIG, SupermatConstants.OPENAI_CONFIG)
+        result = chroma_serv.query(query, collection_id)
+        return result['documents']
+    except Exception as e:
+        trace_back = traceback.format_exc()
+        ERROR_LOG.error(f"Error while querying data from chroma {str(e)}. Traceback: {str(trace_back)}")
+        raise Exception(SupermatConstants.ERR_STR_CHROMA_EXTRACT)
+
+ 
