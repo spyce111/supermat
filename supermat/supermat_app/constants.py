@@ -17,8 +17,8 @@ class SupermatConstants:
     HUGGING_FACE_MODEL_NAME = "ml6team/keyphrase-extraction-distilbert-inspec"
     SPEAKER_REGEX = "(Operator|Speaker|Moderator|Guest Speaker):"
     SPLIT_SENTENCE_REGEX = "(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s"
-    ADOBE_CLIENT_ID = ""
-    ADOBE_CLIENT_SECRET = ""
+    ADOBE_CLIENT_ID = "92d9b453889f4e85b9bd19916a3408c0"
+    ADOBE_CLIENT_SECRET = "p8e-qqj6ETzhTfSTYl-meuo3RcpYiHts8mea"
     ERR_STRING_EXTRACT_ROLES = "Error while extracting roles"
     ERR_STRING_EXTRACT_TIMESTAMP = "Error while extracting Timestamp"
     ERR_STRING_HUGGING_FACE_EXTRACT = 'Error while extracting the key words: Hugging face extract'
@@ -34,3 +34,4 @@ class SupermatConstants:
     ERR_STR_REMOVE_SPECIAL_CHAR = "Error while removing the special chanracters from the keywords"
     ERR_STR_GENERIC = "Something went wrong please try again later"
     ERR_STR_EXTRACt_ANNOT = "Error extracting annotations"
+    ERR_STR_GRAPH_CREATE = "Error while creating the graph"

@@ -48,4 +48,4 @@ RUN python3 -m nltk.downloader punkt stopwords wordnet averaged_perceptron_tagge
 COPY ./ /rest/supermat
 
 # Django Model initial Migrate
-RUN python3 manage.py migrate
+# RUN python3 manage.py migrate

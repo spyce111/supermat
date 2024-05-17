@@ -11,6 +11,11 @@ import string
 import difflib
 import base64
 import shutil
+import networkx as nx
+import json 
+import plotly.graph_objects as go
+from plotly.offline import plot
+
 # from transformers.pipelines import AggregationStrategy
 from adobe.pdfservices.operation.auth.credentials import Credentials
 from adobe.pdfservices.operation.exception.exceptions import ServiceApiException, ServiceUsageException, SdkException
@@ -762,3 +767,120 @@ def adobe_pdf_parser(upload_file, request_id, is_original=False):
         trace_back = traceback.format_exc()
         ERROR_LOG.error(f"Error while parsing the pdf: adobe_pdf_parser {str(e)}. Traceback: {str(trace_back)}")
         raise Exception(SupermatConstants.ERR_STRING_ADOBE_PARSER)
+    
+
+
+def create_graph(data,output_file):
+    try:
+        
+        SUCCESS_LOG, ERROR_LOG = log_create()
+
+
+
+# Load JSON data from the file
+        with open(data,encoding='utf8') as f:
+            data = json.load(f)
+
+        # sentences=data["results"]
+        # print(data)
+
+        
+
+        node_list_head = [d['key'] for d in data if 'key' in d and d['key']]
+        # print(node_list_head)
+        edges_list = [d['structure'] for d in data if 'key'in d and d['key'] in node_list_head and 'structure' in d]
+        # node_list_tail=[]
+        # print(len(node_list_head))
+        # print(len(edges_list))
+        
+        
+
+        G = nx.DiGraph()
+
+    # Add edges to the graph
+        for node, edge in zip(node_list_head, edges_list):
+            if isinstance(node, list):
+                node = str(tuple(node))
+            if isinstance(edge, list):
+                edge = str(tuple(edge))
+            G.add_edge(node, edge)
+
+
+
+        # Get positions for the nodes in G
+        pos = nx.spring_layout(G)
+
+        # Create Edges
+        edge_x = []
+        edge_y = []
+        for edge in G.edges():
+            x0, y0 = pos[edge[0]]
+            x1, y1 = pos[edge[1]]
+            edge_x.append(x0)
+            edge_x.append(x1)
+            edge_x.append(None)
+            edge_y.append(y0)
+            edge_y.append(y1)
+            edge_y.append(None)
+
+        edge_trace = go.Scatter(
+            x=edge_x, y=edge_y,
+            line=dict(width=0.5, color='#888'),
+            hoverinfo='none',
+            mode='lines')
+
+        # Create Nodes
+        node_x = [pos[i][0] for i in G.nodes()]
+        node_y = [pos[i][1] for i in G.nodes()]
+
+        node_trace = go.Scatter(
+            x=node_x, y=node_y,
+            mode='markers',
+            hoverinfo='text',
+            marker=dict(
+                showscale=True,
+                colorscale='YlGnBu',
+                reversescale=True,
+                color=[],
+                size=10,
+                colorbar=dict(
+                    thickness=15,
+                    title='Node Connections',
+                    xanchor='left',
+                    titleside='right'
+                ),
+                line_width=2))
+
+        # Add hover text
+        node_text = [str(i) for i in G.nodes()]
+        node_trace.text = node_text
+
+        # Color node points by the number of connections.
+        node_adjacencies = []
+        for node, adjacencies in enumerate(G.adjacency()):
+            node_adjacencies.append(len(adjacencies[1]))
+
+        node_trace.marker.color = node_adjacencies
+
+        fig = go.Figure(data=[edge_trace, node_trace],
+                layout=go.Layout(
+                    title='<br>Network graph made with Python',
+                    titlefont_size=16,
+                    showlegend=False,
+                    hovermode='closest',
+                    margin=dict(b=20,l=5,r=5,t=40),
+                    annotations=[ dict(
+                        
+                        showarrow=False,
+                        xref="paper", yref="paper",
+                        x=0.005, y=-0.002 ) ],
+                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
+                    )
+        plot(fig, filename=output_file)
+    except Exception as e:
+        trace_back = traceback.format_exc()
+        ERROR_LOG.error("Error while generating the Knowledge graph" + str(e)+". Trace Back: "+ str(trace_back))
+        raise Exception(SupermatConstants.ERR_STR_GRAPH_CREATE)
+
+    

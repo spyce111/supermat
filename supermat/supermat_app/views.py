@@ -42,13 +42,16 @@ class UploadParse(BaseView):
             lines = read_json_file(output_file)
             pdf_file = temporary_file_location+'/'+str(file_base_name)+request_id+'_'+'response.pdf'
             # Create PDF from list of strings
-            pdf_start = datetime.now()
-            create_pdf_from_list(pdf_file, lines)
-            pdf_end = datetime.now()
-            print(f"PDF creation time: {str((pdf_end-pdf_start))}")
+            # pdf_start = datetime.now()
+            # create_pdf_from_list(pdf_file, lines)
+            # pdf_end = datetime.now()
+            # print(f"PDF creation time: {str((pdf_end-pdf_start))}")
+            graph_file_path =f"{temporary_file_location}/{file_base_name}_{request_id}_knowledge_graph.html"
+            create_graph(output_file,graph_file_path)
             self.response['res_data']['results'] = result
             self.response['res_data']['request_id'] = {f"{request_id}": f"{file_path}"}
-            self.response['res_data']['response_file'] = {'response_json':output_file,"response_pdf":pdf_file}
+            self.response['res_data']['response_file'] = {'response_json':output_file,"response_pdf":pdf_file,"response_graph":graph_file_path}
+
             return JsonResponse(data=self.response, safe=False, status=200)
         except Exception as e:
             self.response['res_data'] = {}
