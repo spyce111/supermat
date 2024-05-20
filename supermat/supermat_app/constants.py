@@ -34,3 +34,14 @@ class SupermatConstants:
     ERR_STR_REMOVE_SPECIAL_CHAR = "Error while removing the special chanracters from the keywords"
     ERR_STR_GENERIC = "Something went wrong please try again later"
     ERR_STR_EXTRACt_ANNOT = "Error extracting annotations"
+    ERR_STR_CHROMA_INSERT = "Error while inserting data into chroma"
+    ERR_STR_CHROMA_EXTRACT = "Error while getting the data from chroma"
+    CHROMA_DB_CONFIG = {
+        'host': 'localhost',
+        'port': 8001
+    }
+    OPENAI_CONFIG = {
+        'api_key': 'sk-test-account-iJTiul2SiNHcFWLyYonNT3BlbkFJRXZjJakTaRc1VdzSNJJE',
+        'gpt_model': 'gpt-3.5-turbo'
+    }
+    EMBED_MDL_NAME = "all-mpnet-base-v2"
