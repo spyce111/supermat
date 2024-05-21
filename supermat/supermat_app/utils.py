@@ -40,8 +40,10 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from .supermat_chroma import ChromaDBConnection
 nlp = spacy.load("en_core_web_sm")
 import unicodedata
+from openai import OpenAI
 
 class CustomLogger:
 
@@ -75,9 +77,9 @@ def log_create():
         pid = str(uuid.uuid4().hex)
         custom_process = CustomLogger()
         custom_process.set_process_id(pid)
-        SUCCESS_LOG = custom_process.create_log_file(SUCCESS_NAME,SUCCESS_FILE)
+        # SUCCESS_LOG = custom_process.create_log_file(SUCCESS_NAME,SUCCESS_FILE)
         ERROR_LOG = custom_process.create_log_file(ERROR_NAME,ERROR_FILE)
-        return SUCCESS_LOG, ERROR_LOG
+        # return SUCCESS_LOG, ERROR_LOG
     except Exception as e:
         raise Exception(SupermatConstants.ERR_STR_LOG_CREATE)
 
@@ -325,7 +327,7 @@ def extract_roles(sentence):
 def extract_timestamp(text):
     try:
         # Extract timestamp from text
-        SUCCESS_LOG, ERROR_LOG = log_create()
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         pattern = rf'{SupermatConstants.TIME_STAMP_REGEX}'
         match = re.search(pattern, text)
         return match.group(1) if match else None
@@ -336,7 +338,7 @@ def extract_timestamp(text):
 
 def extract_keywords_spacy(sentence):
     try:
-        SUCCESS_LOG, ERROR_LOG = log_create()
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         doc = nlp(sentence)
         # Extract words with more than 4 characters, numerics, nouns, verbs, adverbs, and adjectives excluding pronouns
         keywords = [token.text for token in doc if ((token.is_alpha and \
@@ -353,7 +355,7 @@ def extract_keywords_spacy(sentence):
 
 def extract_meaningful_words(sentence):
     try:
-        SUCCESS_LOG, ERROR_LOG = log_create()
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         # Tokenize the sentence
         tokens = word_tokenize(sentence)
         # Perform POS tagging
@@ -423,7 +425,7 @@ def extract_keywords_nltk(sentence):
 
 def remove_similar_words(word_list, threshold=0.8):
     try:
-        SUCCESS_LOG, ERROR_LOG = log_create()
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         cleaned_list = []
         word_set = set(word_list)
 
@@ -450,7 +452,7 @@ def extract_annotations(sentence):
 
 def remove_special_characters_from_list(lst):
     try:
-        SUCCESS_LOG, ERROR_LOG = log_create()
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         # Create translation table
         table = str.maketrans(string.punctuation, ' ' * len(string.punctuation))
         # Remove special characters from each string in the list
@@ -469,7 +471,7 @@ def remove_special_characters_from_list(lst):
 
 def is_pdf(file_path):
     try:
-        SUCCESS_LOG, ERROR_LOG = log_create()
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         response = file_path.name.lower().endswith('.pdf')
         if file_path.content_type == 'application/pdf' and response:
             return True
@@ -481,7 +483,7 @@ def is_pdf(file_path):
 
 def parse_file(parsed_json, file_name, request_id, pdf_path,image_json, image_count):
     try:
-        SUCCESS_LOG, ERROR_LOG = log_create()
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         output = []
         existing_texts = set()
         def add_prefix_to_sentences(section_number_, passage_data, element_):
@@ -521,7 +523,7 @@ def parse_file(parsed_json, file_name, request_id, pdf_path,image_json, image_co
         for element in tqdm(parsed_json.get('elements',''), desc="Processing"):
             path_type = element.get('Path','')[11]
             
-            if ('filePaths' in element.keys()):
+            if 'filePaths' in element.keys():
                 passage_number += 1
                 figure = None
                 print('Total Images using Figure directory: ', str(len(image_json)))
@@ -580,7 +582,7 @@ def parse_file(parsed_json, file_name, request_id, pdf_path,image_json, image_co
                     text += ''.join(elem.get('Text','') for elem in parsed_json.get('elements','') if pattern.match(elem.get('Path','')) and 'Text' in elem and elem.get('Path','') not in existing_texts)
                     passage_number += 1
                     add_prefix_to_sentences(section_number, text, element)
-        SUCCESS_LOG.info(SupermatConstants.ERR_STR_PARSE_PDF.format(request_id=request_id))
+        # SUCCESS_LOG.info(SupermatConstants.ERR_STR_PARSE_PDF.format(request_id=request_id))
         return output
     except Exception as e:
         trace_back = traceback.format_exc()
@@ -686,7 +688,7 @@ def images_in_directory_to_base64(directory_path, destination_path):
 
 def adobe_pdf_parser(upload_file, request_id, is_original=False):
     try:
-        SUCCESS_LOG, ERROR_LOG = log_create()
+        # SUCCESS_LOG, ERROR_LOG = log_create()
         if is_original:
             # Read the uploaded file
             uploaded_file_data = upload_file.file.read()
@@ -709,7 +711,7 @@ def adobe_pdf_parser(upload_file, request_id, is_original=False):
         # Set operation input from a source file
         source = FileRef.create_from_stream(BytesIO(uploaded_file_data), "application/pdf")
         extract_pdf_operation.set_input(source)
-
+        # import pdb;pdb.set_trace()
         # Build ExtractPDF options and set them into the operation
         extract_pdf_options = ExtractPDFOptions.builder() \
             .with_element_to_extract(ExtractElementType.TEXT)\
@@ -725,7 +727,9 @@ def adobe_pdf_parser(upload_file, request_id, is_original=False):
         base_name, file_extension = os.path.splitext(source_path)
         file_base_name = base_name.split('/')[-1]
         data_path_zip = os.path.abspath(os.path.join(os.path.dirname(__name__)))
-        destination_path = data_path_zip+'/'+str(file_base_name)+request_id+file_extension
+        # destination_path = data_path_zip+'/'+str(file_base_name)+request_id+file_extension
+        dest_path = data_path_zip + '\\' + request_id + file_extension
+        destination_path = os.path.abspath(os.path.join(dest_path))
         shutil.copy(source_path,destination_path)
         
         with zipfile.ZipFile(destination_path, 'r') as zip_ref:
@@ -750,7 +754,7 @@ def adobe_pdf_parser(upload_file, request_id, is_original=False):
                 trace_back = traceback.format_exc()
                 ERROR_LOG.critical(f"Error deleting {file.name}: {e}. Traceback: {str(trace_back)}")
         
-        SUCCESS_LOG.info(SupermatConstants.ERR_STR_PARSE_PDF.format(request_id=request_id))
+        # SUCCESS_LOG.info(SupermatConstants.ERR_STR_PARSE_PDF.format(request_id=request_id))
         # write_json_file(pdf_json_text,'output_file.json')
         # lines = read_json_file('output_file.json')
         return parsed_json
@@ -762,3 +766,70 @@ def adobe_pdf_parser(upload_file, request_id, is_original=False):
         trace_back = traceback.format_exc()
         ERROR_LOG.error(f"Error while parsing the pdf: adobe_pdf_parser {str(e)}. Traceback: {str(trace_back)}")
         raise Exception(SupermatConstants.ERR_STRING_ADOBE_PARSER)
+
+def insert_into_chroma(result, request_id):
+    try:
+        import pdb;pdb.set_trace()
+        # SUCCESS_LOG, ERROR_LOG = log_create()
+        chroma_serv = ChromaDBConnection(SupermatConstants.CHROMA_DB_CONFIG)
+        json_list = [json.dumps(element) for element in result]
+        json_ids = [f"{request_id}_id{i}" for i in range(len(result))]
+        metadata = [{"document_id": request_id} for _ in range(len(result))]
+        data_list = {'ids': json_ids, 'documents': json_list, 'metadatas': metadata}
+        collection_name, result = chroma_serv.insert(collection_name="supermat_docs", data_list=data_list)
+        return collection_name, result
+    except Exception as e:
+        trace_back = traceback.format_exc()
+        ERROR_LOG.error(f"Error while loading data into chroma {str(e)}. Traceback: {str(trace_back)}")
+        raise Exception(SupermatConstants.ERR_STR_CHROMA_INSERT)
+
+def get_query_from_chroma(query, document_id=None):
+    try:
+        # SUCCESS_LOG, ERROR_LOG = log_create()
+
+        chroma_serv = ChromaDBConnection(SupermatConstants.CHROMA_DB_CONFIG)
+        result = chroma_serv.query(collection="supermat_docs", document_id=document_id, query=query)
+        return result
+    except Exception as e:
+        trace_back = traceback.format_exc()
+        ERROR_LOG.error(f"Error while querying data from chroma {str(e)}. Traceback: {str(trace_back)}")
+        raise Exception(SupermatConstants.ERR_STR_CHROMA_EXTRACT)
+
+def chat_with_openai(input_data, question, openai_config=SupermatConstants.OPENAI_CONFIG):
+
+    openai_client = OpenAI(api_key=openai_config['api_key'])
+    gpt_model = openai_config['gpt_model']
+    individual_response = ""
+    for i in range(0, len(input_data)):
+        query = f"""Use the below information to answer the subsequent question. If the answer cannot be found, write "I don't know."
+        Information:
+        \"\"\"
+        {input_data[i]}
+        \"\"\"
+        Question: {question}? and cite the section number you take data from"""
+        response1 = openai_client.chat.completions.create(
+            messages=[
+                {'role': 'system', 'content': 'You are a helpful assistant'},
+                {'role': 'user', 'content': query},
+            ],
+            model=gpt_model,
+            temperature=0,
+        )
+        individual_response += response1.choices[0].message.content
+    query = f"""Use the below information to answer the subsequent question. If the answer cannot be found, write "I don't know."
+            Information:
+            \"\"\"
+            {individual_response}
+            \"\"\"
+            Question: Summarize the above information along with citations they have """
+    response2 = openai_client.chat.completions.create(
+        messages=[
+            {'role': 'system', 'content': 'You are a helpful assistant'},
+            {'role': 'user', 'content': query},
+        ],
+        model=gpt_model,
+        temperature=0,
+    )
+    import pdb;
+    pdb.set_trace()
+    return response2.choices[0].message.content
